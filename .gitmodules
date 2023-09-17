@@ -1,0 +1,6 @@
+[submodule "eressea-source"]
+	path = eressea-source
+	url = https://github.com/eressea/server.git
+[submodule "orders-php"]
+	path = orders-php
+	url = https://github.com/eressea/orders-php.git
