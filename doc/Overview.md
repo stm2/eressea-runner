@@ -3,6 +3,7 @@ This documentation shall help you to setup your own server and run one or more g
 * [[Starting a Game]] - set up a game, create a map and add players
 * [[Setting up E-Mail]] - connect to the outside world
 * [[Automation with Crontab]] - run turns automatically
+* [[The Game Editor]] - more details about gmtool.editor()
 * [[Changing the Rules]] - adjust your game rules
 * [[World Creation and Seeding]] - advanced methods for creating a world
 

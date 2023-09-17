@@ -12,7 +12,7 @@ After you have a fully functional Linux, you need to install some extra packages
 
 ```shell
 sudo apt-get -y update
-sudo apt-get -y install gcc make git cmake liblua5.2-dev libtolua-dev libncurses5-dev libsqlite3-dev libcjson-dev libiniparser-dev libexpat1-dev libutf8proc-dev lua5.2 luarocks libbsd-dev php php-sqlite3 python2 jq zip
+sudo apt-get -y install gcc make git cmake liblua5.2-dev libtolua-dev libncurses5-dev libsqlite3-dev libcjson-dev libiniparser-dev libexpat1-dev libutf8proc-dev lua5.2 luarocks libbsd-dev php php-sqlite3 python3 jq zip
 luarocks install --local
 # only strictly necessary if you want to make changes to the server code
 sudo apt-get -y install cppcheck shellcheck clang-tools iwyu
@@ -49,5 +49,16 @@ s/build && s/runtests && s/install
 ~~~
 
 If all went well, you should now have a lot of files installed into the ~/eressea/server directory.
+
+## Adding orders-php requirement
+
+There is one more requirement we need for processing orders later.
+
+```shell
+cd ~/eressea
+git clone https://github.com/eressea/orders-php.git
+```
+
+## Read on
 
 You can now proceed to [[Starting a Game]].

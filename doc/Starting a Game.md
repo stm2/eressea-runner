@@ -40,6 +40,8 @@ You can press 'f' to terraform the region under the cursor, or chain ';' and 'f'
 
 Press S to save your world to a file. Since we are in turn 0, you should call it "0.dat". It will be stored in the `$ERESSEA/game-1/data/` directory, and each future turn will produce a new file. Press 'Q' to exit the editor and Ctrl+D to quit the program and get to the shell prompt.
 
+You can press ? to display a list of available commands. See also [[The Game Editor]].
+
 **!!ERROR!!**: eressea.ini specifies start = 1, but turn (the file) is set to 0!
 
 ### Adding Players
@@ -111,6 +113,7 @@ Now you can run a new turn by typing
 This command takes the game number and the current turn as parameters. It reads the files data/0.dat and orders.0, call the actual eressea server to process the orders, and then writes the new reports to the `reports` directory all in one go, completing the cycle.
 ### Read on
 * [[Setting up E-Mail]]
+* [[The Game Editor]]
 * [[World Creation and Seeding]]
 * [[Automation with Crontab]]
 * [[Changing the Rules]]

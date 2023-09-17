@@ -1,4 +1,4 @@
-### Additional prerequisites
+## Additional prerequisites
 
 In order to receive orders and send reports to your players, you need a working e-mail address. Details of getting and configuring this is somewhat beyond the scope of this guide, but we will try to give you some hints. For these purposes you will need additional software. We are going to use fetchmail and procmail to retrieve and filter orders, and mutt to send reports:
 
@@ -6,7 +6,7 @@ In order to receive orders and send reports to your players, you need a working 
 sudo apt-get install -y sendmail procmail fetchmail mutt libsasl2-modules zip
 ```
 
-### Security considerations
+## Security considerations
 
 If you run an actual server, it is highly recommended that you create an extra Linux user account for running and installing the server, instead of using your own user account. That way your personal data is more protected against possible malicious attacks. We also highly recommend getting a separate e-mail address for running the game. This will reduce spam and clogging of your personal mailbox as well as preventing others from accidentally getting access to your private e-mails.
 
@@ -21,7 +21,7 @@ You may skip the muttrc configuration below, although you might just decide to u
 #### Scenario 2: Public E-Mail Service
 
 You might also use an e-mail service provider like gmail, gmx, mailbox.org, or posteo.de. For using this, you will need to tell the email software mutt how to access your mailbox. Create a file .muttrc your home directory with the following content (modify it to reflect your own data, at least your user name and password as well as your provider's smtp and imap servers):
-**TODO** create in the directory $ERESSEA/server/etc
+**TODO** create in the directory $ERESSEA/server/etc; mutt is currently called in send-zip-report, accept-orders.py, sendreport.sh, and s/preview
 
 ```ini
 # your user name for sending mails (may or may not be your email address)
@@ -210,7 +210,7 @@ sendreports.sh 1
 
 But this would be somewhat tedious, wouldn't it? We can do one better by automatically performing those steps and additionally making sure that fetchmail is always running.
 
-### Read on
+## Read on
 
-[[Using the Web Interface]]
-[[Automation with Crontab]]
+* [[Automation with Crontab]]
+* [[Using the Web Interface]]
