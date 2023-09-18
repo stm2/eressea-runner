@@ -4,3 +4,6 @@
 [submodule "orders-php"]
 	path = orders-php
 	url = https://github.com/eressea/orders-php.git
+[submodule "lib/analog"]
+	path = lib/analog
+	url = https://github.com/jbroadway/analog.git
