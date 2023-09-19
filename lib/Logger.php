@@ -47,7 +47,26 @@ class Logger {
 		return strtr ($message, $replace);
 	}
 
+	static function log_rotate($log_file) {
+		if (!file_exists($log_file))
+			return;
+		$maxfile = 9;
+		for($i=0; $i < $maxfile; ++$i) {
+			if (!file_exists($log_file . ".$i"))
+				break;
+		}
+		for(; $i > 0;) {
+			$nextfile = "$log_file.$i";
+			if (file_exists($nextfile))
+				unlink ($nextfile);
+			--$i;
+			rename("$log_file.$i", $nextfile);
+		}
+		rename($log_file, "$log_file.0");
+	}
+
 	static function set_file($log_file) {
+		Logger::log_rotate($log_file);
 		Analog::handler(Analog\Handler\File::init ($log_file));
 	}
 
