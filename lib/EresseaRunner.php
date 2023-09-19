@@ -4,10 +4,23 @@ require_once 'Logger.php';
 
 class EresseaRunner {
 
-    static function usage($name, $exit = NULL, $command = NULL) {
-        echo <<<USAGE
+    private array $config;
+    private int $verbosity = 1;
+    public bool $confirm_all = false;
 
-    Usage: $name [-f <configfile>] [-y] [-l <log level>] [-v <verbosity>] [-g <game-id>] [-t <turn>] <command> [<args> ...]
+
+    function usage($name, $short = true, $exit = NULL, $command = NULL) {
+        echo <<<EOL
+
+USAGE
+
+    $name [-f <configfile>] [-y] [-l <log level>] [-v <verbosity>] [-g <game-id>] [-t <turn>] <command> [<args> ...]
+
+
+EOL;
+
+        if (!$short) {
+            echo <<<EOL
 
     <configfile> contains all the game settings. Defaults to config.ini in the script's directoy.
 
@@ -22,50 +35,77 @@ class EresseaRunner {
         do not ask for confirmation or user input whenever possible
 
 
+COMMANDS
 
     These commands are available:
 
-        help
-            display help information
+    help
+        display help information
 
     TODO
 
-        install [<server directory>] [<games directory>]
-            install the server
-        upgrade [<branch>]
-            recompile and install from source
-        newgame <id> <rules>
-            start a new game
-        gmtool
-            open the game editor
-        seed <algorithm>
-            seed new players
-        write_reports [<faction id> ...]
-            write reports for all or some factions
-        send [<faction id> ...]
-            send reports for all or some factions
-        fetch
-            fetch orders from mail server
-        create_orders
-            process all orders in queue
-        run
-            run a turn
-        run_all
-            do a complete cycle: fetch mail, create-orders, run, send
-        announce subject textfile [attachement ...]
-            send a message to all players
-        backup
-            backup relevant data for this turn
+    install [<branch>] [<server directory>] [<games directory>]
+        install the server
+    upgrade [<branch>]
+        recompile and install from source
+    newgame <id> <rules>
+        start a new game
+    gmtool
+        open the game editor
+    seed <algorithm>
+        seed new players
+    write_reports [<faction id> ...]
+        write reports for all or some factions
+    send [<faction id> ...]
+        send reports for all or some factions
+    fetch
+        fetch orders from mail server
+    create_orders
+        process all orders in queue
+    run
+        run a turn
+    run_all
+        do a complete cycle: fetch mail, create-orders, run, send
+    announce subject textfile [attachement ...]
+        send a message to all players
+    backup
+        backup relevant data for this turn
+
+THE CONFIG FILE
+
+    The config file consists of several sections.
+
+    [runner]
+    ; absolute path to working directory
+    ; (default: the directory containing the config file or the directory containing the script
+    ; all relative paths are relative to base
+    base = /absolute/path
+
+    ; path to a log file (default: logs/runner.log)
+    logfile = path/to/file
+
+    ; path to server installation directory
+    serverdir = path/to/dir
+
+    ; path to games directory
+    gamedir = path/to/dir
+
+    [game]
+    ; game IDs
+    id[] = id1
+    id[] = id2
 
 
-USAGE;
+EOL;
+        }
 
-    if ($exit !== NULL) {
-        exit($exit);
+        if ($exit !== NULL) {
+            exit($exit);
+        }
     }
-}
 
-    static function info($configfile, $argv, $pos_args) {
+    function info($configfile, $argv, $pos_args) {
+        echo "\nworking directory: '" . getcwd() . "'\n";
         echo "config: '$configfile'\n";
         foreach ($pos_args as $key => $value) {
             echo "arg[$key]: '$value'\n";
@@ -73,33 +113,239 @@ USAGE;
 
         if (empty($pos_args[1])) {
             Logger::error("missing argument");
-            EresseaRunner::usage($argv[0], 1);
+            // $this->usage($argv[0], 1);
         }
 
+        echo "\nbase dir: '" . $this->config['runner']['base'] . "'\n";
+        echo "log file: '" . $this->config['runner']['logfile'] ."'\n";
+        echo "server: '" . $this->config['runner']['serverdir'] . "'\n";
+        echo "games: '" . $this->config['runner']['gamedir'] . "'\n\n";
+
     }
 
-    static function install($basedir, $pos_args) {
-        $installdir = $pos_args[1] ?? $basedir . '/server';
-        $gamedir = $pos_args[1] ?? $basedir;
+    public function set_verbosity($value) {
+        $this->verbosity = $value;
+    }
 
-        echo "install server in $installdir, games in $gamedir\n";
+    private function confirm($prompt) {
+        if ($this->confirm_all) {
+            if ($this->verbosity > 0)
+                echo "$prompt [Y]\n";
+            return true;
+        }
+        $continue = readline("$prompt [Y/n] \n");
+        return $continue === false || $continue ==='' || strcasecmp($continue, 'y') === 0;
+    }
+
+    private function input($prompt, &$value) {
+        if ($this->confirm_all) {
+            if ($this->verbosity > 0)
+                echo "$prompt [$value]\n";
+            return true;
+        }
+        $input = readline("$prompt [$value] ");
+        if (!empty($input))
+            $value = $input;
+        return $input !== false;
+    }
+
+    function exec($cmd, $msg = null, $exitonfailure = true) {
+        if ($this->verbosity > 0)
+            echo "executing '$cmd'...";
+        Logger::debug($cmd);
+
+        exec($cmd, $out, $result);
+
+        if ($this->verbosity > 0)
+            echo "done\n";
+
+        Logger::debug($out);
+
+        if ($result != 0) {
+            Logger::error(empty($msg)?"$cmd exited abnormally.\n":$msg);
+            if ($exitonfailure)
+                exit(2);
+        }
+    }
+
+    function install($pos_args, $update = false) {
+        $basedir = $this->config['runner']['base'];
+
+
+        $branch = $pos_args[1] ?? 'master';
+        if (!$this->input("install branch: ", $branch))
+            exit(0);
+        if ($branch !== 'master')
+            $this->confirm("Installing versions other than the master branch is unsafe. Continue?");
+
+        $installdir = $pos_args[2] ?? $basedir . '/server';
+        // if (!$this->input("install server in ", $installdir))
+        //     exit(0);
+        $gamedir = $pos_args[3] ?? $basedir;
+        // if (!$this->input("install games in ", $gamedir))
+        //     exit(0);
+
+        if (!str_starts_with($installdir, "/"))
+            $installdir = $basedir . "/" . $installdir;
+        if (!str_starts_with($gamedir, "/"))
+            $gamedir = $basedir . "/" . $gamedir;
+
+        if (!$this->confirm("install branch $branch of server in $installdir, games in $gamedir?"))
+            exit(0);
+
+        if (!$update && file_exists($installdir)) {
+            $msg = "installation directory exits, please use the update command";
+            if ($this->verbosity > 0)
+                echo "$msg\n";
+            Logger::info($msg);
+            exit(0);
+        }
+
+        // doesn not work!
+        // $this->exec("cd $basedir/eressea-source");
+        chdir("$basedir/eressea-source");
+
+        $this->exec("git fetch");
+
+        $this->exec("git checkout $branch", "Failed to update source. Do you have local changes?");
+
+        $this->exec("git pull --rebase origin $branch", "Failed to update source. Do you have local changes?");
+
+        $this->exec("git submodule update --init --recursive");
+
+        $this->exec("s/cmake-init");
+
+        $this->exec("s/build");
+
+        $this->exec("s/runtests");
+
+        $this->exec("s/install -f");
+
+        $this->config['runner']['serverdir'] = $installdir;
+        $this->config['runner']['gamedir'] = $gamedir;
+        $this->save_config();
+    }
+
+    private function sd(&$c, $path, $i, $default) {
+       $step = $path[$i];
+        if(!isset($c[$step])) {
+            $c[$step] = ($i+1 == count($path)) ? $default : [];
+        }
+        if ($i+1 < count($path))
+            $this->sd($c[$step], $path, $i+1, $default);
+    }
+
+    private function set_default(&$config, $path, $default) {
+        $this->sd($config, $path, 0, $default);
+    }
+
+    function parse_config($configfile) {
+        $config = NULL;
+        if (file_exists($configfile))
+            $config = parse_ini_file($configfile, true);
+
+        if (!$config)
+            $config = [];
+
+        $this->set_default($config, ['configfile'], $configfile);
+        $this->set_default($config, ['runner', 'base'], dirname($configfile));
+        $config['runner']['base'] = realpath($config['runner']['base']);
+        $this->set_default($config, ['runner', 'logfile'], 'log/runner.log');
+        $this->set_default($config, ['runner', 'serverdir'], 'server');
+        $this->set_default($config, ['runner', 'gamedir'], '.');
+
+        $this->config = $config;
+        return $config;
+    }
+
+    private function put_ini_file($file, $array, $i = 0, $prefix="") {
+        $str="";
+        if ($i == 0)
+            foreach ($array as $k => $v) {
+                if (!is_array($v)) {
+                    if (!is_numeric($v))
+                        $v = "\"$v\"";
+                    $str .= "$k = $v\n";
+                }
+            }
+        foreach ($array as $k => $v) {
+            if (is_array($v)) {
+                if ($i == 0) {
+                    $str .= str_repeat(" ", $i*2) . "[$k]\n";
+                    $str .= $this->put_ini_file("", $v, $i + 1);
+                } elseif ($i == 1) {
+                    $prefix = str_repeat(" ", $i*2) . "$k";
+                    $str .= $this->put_ini_file("", $v, $i + 1, $prefix);
+                } elseif ($i == 2) {
+                    $str .= "error $k =>" . print_r($v);
+                }
+            } else {
+                if ($i == 0)
+                    continue;
+                if (!is_numeric($v))
+                    $v = "\"$v\"";
+                if ($prefix)
+                    $str .= "${prefix}[$k] = $v\n";
+                else
+                    $str .= str_repeat(" ", $i*2) . "$k = $v\n";
+            }
+        }
+        if ($file)
+            return file_put_contents($file, $str);
+        else
+            return $str;
+    }
+
+    function save_config() {
+        $configfile = $this->config['configfile'];
+        if (empty($configfile) || !file_exists($configfile) || !is_writable($configfile)) {
+            Logger:error("cannot write to config file '$configfile");
+        }
+        $copy = $this->config;
+        $copy['bla'] = 'a=b';
+        unset($copy['configfile']);
+        $this->put_ini_file($configfile, $copy);
+        Logger::debug("wrote config file $configfile");
     }
 }
 
-function parse_config($configfile) {
-    if (file_exists($configfile))
-        return parse_ini_file($configfile, true);
-    return NULL;
+function get_logger($config, $log_level) {
+    $logfile = $config['runner']['logfile'] ?? ($config['runner']['base'] . "/log/runner.log") ?? NULL;
+    if (!str_starts_with($logfile, "/"))
+        $logfile = $config['runner']['base'] . "/" . $logfile;
+
+    $logger = new Logger;
+    $logger->set_level($log_level);
+
+    if ($logfile) {
+        if (!file_exists(dirname($logfile)))
+            mkdir(dirname($logfile));
+        if ((file_exists($logfile) && is_writable($logfile)) || is_writable(dirname($logfile))) {
+            $logger->set_file($logfile);
+            $logger->info("set log file to '$logfile', log level '$log_level'");
+        } else {
+            $logger->error("could not access log file '$logfile'");
+        }
+    }
+    return $logger;
 }
 
-$usage = false;
+$runner = new EresseaRunner;
+
+$usage = 0;
 $optind = 1;
 $log_level = Logger::WARNING;
 $verbosity = 1;
+$scriptname = $_SERVER['PHP_SELF'];
+
+if (realpath($scriptname) !== false)
+    $configfile = dirname(dirname(realpath($scriptname))) . "/config.ini";
+else
+    $configfile = realpath(".") . "/config.ini";
 while (isset($argv[$optind])) {
     $arg = $argv[$optind];
     if (in_array($arg, ['-h', '--help'])) {
-        $usage = true;
+        $usage = 2;
     } elseif ('-c' === $arg) {
         $scriptname = $argv[++$optind];
     } elseif ('-f' === $arg) {
@@ -108,35 +354,26 @@ while (isset($argv[$optind])) {
         $verbosity = $argv[++$optind];
     } elseif ('-l' === $arg) {
         $log_level = $argv[++$optind];
+    } elseif ('-y' === $arg) {
+        $runner->confirm_all = true;
+    } else if (str_starts_with($arg, "-")) {
+        if ($verbosity > 0)
+            echo "unknown option '$arg'\n";
+        $usage = 1;
     } else {
         break;
     }
     ++$optind;
 }
 if ($usage) {
-    EresseaRunner::usage($scriptname ?? $argv[0], 0);
+    $runner->usage($scriptname ?? $argv[0], true, 0);
 }
 
-$config = parse_config($configfile);
+$runner->set_verbosity($verbosity);
+$config = $runner->parse_config($configfile);
 
-$basedir = dirname($configfile);
 
-$logfile = $config['runner']['logfile'] ?? "$basedir/log/runner.log" ?? NULL;
-
-$logger = new Logger;
-$logger->set_level($log_level);
-
-if ($logfile) {
-    if (!file_exists(dirname($logfile)))
-        mkdir(dirname($logfile));
-
-    if (touch($logfile) && file_exists($logfile) && is_writable($logfile)) {
-        $logger->set_file($logfile);
-        $logger->info("set log file to '$logfile', log level '$log_level'");
-    } else {
-        $logger->error("could not access log file '$logfile'");
-    }
-}
+$logger = get_logger($config, $log_level);
 
 if ($config) {
     $logger->info("config file '$configfile' read");
@@ -151,26 +388,32 @@ $pos_args = array_slice($argv, $optind);
 
 $command = $pos_args[0] ?? 'help';
 
-Logger::info("command $command");
+$logger->info("command $command");
 
 if ($command == 'help') {
     if (empty($pos_args[0]))
-        Logger::warning("missing command");
-    EresseaRunner::usage($scriptname, empty($pos_args[0]) ? 1 : NULL, $pos_args[0] ?? NULL);
+        $logger->warning("missing command");
+    $runner->usage($scriptname, false, empty($pos_args[0]) ? 1 : NULL, $pos_args[0] ?? NULL);
 } elseif ('install' == $command) {
-    EresseaRunner::install($basedir, $pos_args);
+    $runner->install($pos_args);
+} elseif ('update' == $command) {
+    $runner->install($pos_args, true);
 } else {
     if (empty($configfile) || !file_exists($configfile)) {
-        $msg = "Config file not found. Either use the install command or the -c option";
-        echo "$msg\n";
-        Logger::error($msg);
+        $msg = "Config file '$configfile' not found. Either use the install command or the -c option";
+        $logger->error($msg);
+        if ($verbosity > 0) {
+            echo "$msg\n";
+            $runner->usage($scriptname, true, 1);
+        }
         exit(1);
     } elseif ('info' == $command) {
-        EresseaRunner::info($configfile, $argv, $pos_args);
+        $runner->info($configfile, $argv, $pos_args, $config);
     } else {
         $msg = "unknown command '$command'";
-        echo "$msg\n";
-        Logger::error($msg);
-        EresseaRunner::usage($scriptname, 1);
+        if ($verbosity > 0)
+            echo "$msg\n";
+        $logger->error($msg);
+        $runner->usage($scriptname, true, 1);
     }
 }
