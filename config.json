@@ -1,0 +1,12 @@
+{
+    "runner": {
+        "logfile": "log\/runner.log",
+        "serverdir": "server",
+        "gamedir": "."
+    },
+
+    "game": [
+        { "id": "id1" },
+        { "id": "id2" }
+    ]
+}

@@ -73,27 +73,30 @@ COMMANDS
 
 THE CONFIG FILE
 
-    The config file consists of several sections.
+    The config file is in JSON format:
 
-    [runner]
-    ; absolute path to working directory
-    ; (default: the directory containing the config file or the directory containing the script
-    ; all relative paths are relative to base
-    base = /absolute/path
+    {
+      "runner": {
+        // absolute path to working directory
+        // (default: the directory containing the config file or the directory containing the script
+        // all relative paths are relative to base
+        "base": "/absolute/path",
 
-    ; path to a log file (default: logs/runner.log)
-    logfile = path/to/file
+        // path to a log file (default: logs/runner.log)
+        "logfile": "path/to/file",
 
-    ; path to server installation directory
-    serverdir = path/to/dir
+        // path to server installation directory
+        "serverdir": "path/to/dir",
 
-    ; path to games directory
-    gamedir = path/to/dir
+        // path to games directory
+        "gamedir": "path/to/dir",
+      },
 
-    [game]
-    ; game IDs
-    id[] = id1
-    id[] = id2
+      "game": [
+        { "id": "id1" },
+        { "id": "id2" }
+      ]
+    }
 
 
 EOL;
@@ -241,10 +244,20 @@ EOL;
 
     function parse_config($configfile) {
         $config = NULL;
-        if (file_exists($configfile))
-            $config = parse_ini_file($configfile, true);
+        if (file_exists($configfile) && is_readable($configfile)) {
+            $raw = file_get_contents($configfile);
+            if (empty($raw)) {
+                Logger::error("could not read config file '$configfile'");
+            } else {
+                $config = json_decode($raw, true);
+                if ($config == null)
+                    Logger::error("invalid config file '$configfile'");
+            }
+        } else {
+            Logger::error("config file '$configfile' not found");
+        }
 
-        if (!$config)
+        if (empty($config))
             $config = [];
 
         $this->set_default($config, ['configfile'], $configfile);
@@ -258,61 +271,28 @@ EOL;
         return $config;
     }
 
-    private function put_ini_file($file, $array, $i = 0, $prefix="") {
-        $str="";
-        if ($i == 0)
-            foreach ($array as $k => $v) {
-                if (!is_array($v)) {
-                    if (!is_numeric($v))
-                        $v = "\"$v\"";
-                    $str .= "$k = $v\n";
-                }
-            }
-        foreach ($array as $k => $v) {
-            if (is_array($v)) {
-                if ($i == 0) {
-                    $str .= str_repeat(" ", $i*2) . "[$k]\n";
-                    $str .= $this->put_ini_file("", $v, $i + 1);
-                } elseif ($i == 1) {
-                    $prefix = str_repeat(" ", $i*2) . "$k";
-                    $str .= $this->put_ini_file("", $v, $i + 1, $prefix);
-                } elseif ($i == 2) {
-                    $str .= "error $k =>" . print_r($v);
-                }
-            } else {
-                if ($i == 0)
-                    continue;
-                if (!is_numeric($v))
-                    $v = "\"$v\"";
-                if ($prefix)
-                    $str .= "${prefix}[$k] = $v\n";
-                else
-                    $str .= str_repeat(" ", $i*2) . "$k = $v\n";
-            }
-        }
-        if ($file)
-            return file_put_contents($file, $str);
-        else
-            return $str;
-    }
-
     function save_config() {
         $configfile = $this->config['configfile'];
-        if (empty($configfile) || !file_exists($configfile) || !is_writable($configfile)) {
-            Logger:error("cannot write to config file '$configfile");
+        echo "save $configfile\n";
+        if (empty($configfile) || (file_exists($configfile) && !is_writable($configfile))) {
+            Logger::error("cannot write to config file '$configfile");
+        } else {
+            $copy = $this->config;
+            unset($copy['configfile']);
+            file_put_contents($configfile, json_encode($copy, JSON_PRETTY_PRINT), LOCK_EX);
+            Logger::debug("wrote config file $configfile");
         }
-        $copy = $this->config;
-        $copy['bla'] = 'a=b';
-        unset($copy['configfile']);
-        $this->put_ini_file($configfile, $copy);
-        Logger::debug("wrote config file $configfile");
     }
 }
 
 function get_logger($config, $log_level) {
-    $logfile = $config['runner']['logfile'] ?? ($config['runner']['base'] . "/log/runner.log") ?? NULL;
-    if (!str_starts_with($logfile, "/"))
-        $logfile = $config['runner']['base'] . "/" . $logfile;
+    if (!isset($config['runner']))
+        $logfile = NULL;
+    else {
+        $logfile = $config['runner']['logfile'] ?? ($config['runner']['base'] . "/log/runner.log") ?? NULL;
+        if (!str_starts_with($logfile, "/"))
+            $logfile = $config['runner']['base'] . "/" . $logfile;
+    }
 
     $logger = new Logger;
     $logger->set_level($log_level);
@@ -339,9 +319,9 @@ $verbosity = 1;
 $scriptname = $_SERVER['PHP_SELF'];
 
 if (realpath($scriptname) !== false)
-    $configfile = dirname(dirname(realpath($scriptname))) . "/config.ini";
+    $configfile = dirname(dirname(realpath($scriptname))) . "/config.json";
 else
-    $configfile = realpath(".") . "/config.ini";
+    $configfile = realpath(".") . "/config.json";
 while (isset($argv[$optind])) {
     $arg = $argv[$optind];
     if (in_array($arg, ['-h', '--help'])) {
@@ -370,9 +350,9 @@ if ($usage) {
 }
 
 $runner->set_verbosity($verbosity);
+
+$logger = get_logger(null, $log_level);
 $config = $runner->parse_config($configfile);
-
-
 $logger = get_logger($config, $log_level);
 
 if ($config) {
@@ -390,7 +370,7 @@ $command = $pos_args[0] ?? 'help';
 
 $logger->info("command $command");
 
-if ($command == 'help') {
+if ('help' == $command) {
     if (empty($pos_args[0]))
         $logger->warning("missing command");
     $runner->usage($scriptname, false, empty($pos_args[0]) ? 1 : NULL, $pos_args[0] ?? NULL);

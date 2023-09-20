@@ -15,5 +15,5 @@ done
 BASE=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 PROG=$(basename ${BASH_SOURCE[0]})
 
-php $BASE/lib/EresseaRunner.php -c $PROG -f $BASE/config.ini "$@"
+php $BASE/lib/EresseaRunner.php -c $PROG -f $BASE/config.json "$@"
 
