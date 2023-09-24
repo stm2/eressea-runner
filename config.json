@@ -1,12 +1,37 @@
 {
-    "runner": {
-        "logfile": "log\/runner.log",
-        "serverdir": "server",
-        "gamedir": "."
-    },
-
-    "game": [
-        { "id": "id1" },
-        { "id": "id2" }
-    ]
+   "game" : [
+      {
+         "id" : "id1"
+      },
+      {
+         "id" : "id2"
+      }
+   ],
+   "runner" : {
+      "gamedir" : ".",
+      "logfile" : "log/runner.log",
+      "serverdir" : "server"
+   },
+   "seeding" : {
+      "e2" : {
+        "parameters" : {
+            "size" : {
+                "default" : 10
+            }
+        }
+      }
+      "one_world" : {
+         "parameters" : {
+            "size" : {
+               "default" : 10
+            },
+            "size_per_faction" : {
+               "default" : 1
+            }
+         }
+      },
+      "homebrew" : {
+        "script" : "my_seeding.lua"
+      }
+   }
 }

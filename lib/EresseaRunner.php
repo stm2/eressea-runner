@@ -314,7 +314,6 @@ EOF;
         chdir("$gamedir");
 
         $game_id = $this->game_id;
-        echo "$game_id\n";
         $gamesub = "game-$game_id";
         if ($game_id == -1) {
             for($game_id = 0; ; ++$game_id) {
@@ -332,8 +331,6 @@ EOF;
         $turn = $this->turn;
         if ($turn < 0)
             $turn = 0;
-
-        echo $turn;
 
         $rules = "e2";
         if (!empty($pos_args[1]))
