@@ -6,6 +6,7 @@ class EresseaRunner {
 
     private string $scriptname;
     private array $config;
+    private ?string $lua_path = NULL;
 
     private int $verbosity = 1;
     public bool $confirm_all = false;
@@ -450,7 +451,7 @@ EOF;
         symlink("$serverdir/bin", "bin");
     }
 
-    function cmd_seed(array $pos_args) {
+    function check_game() {
         if ($this->game_id >= 0) {
             $gameid = $this->game_id;
         } else {
@@ -461,6 +462,20 @@ EOF;
             $this->game_id = $gameid;
         }
 
+        $gamedir = $this->get_game_directory($gameid);
+        chdir($gamedir);
+
+        return $gameid;
+    }
+
+    function goto_game() {
+        $gameid = $this->check_game();
+        $this->get_game_directory();
+    }
+
+    function cmd_seed(array $pos_args) {
+        $this->goto_game();
+
         $pos = 1;
         $replace = false;
         if (isset($pos_args[$pos]) && $pos_args[$pos] == '-r') {
@@ -470,8 +485,7 @@ EOF;
 
         $algo = $pos_args[$pos] ?? "spiral";
 
-        $gamedir = $this->get_game_directory($gameid);
-        $configfile = $gamedir . "/autoseed.json";
+        $configfile = "autoseed.json";
         if (file_exists($configfile)) {
             $config = $this->parse_json($configfile);
             if ($config['algo'] != null && isset($pos_args[0]) && $config['algo'] != $algo) {
@@ -491,19 +505,9 @@ EOF;
         } else {
             $this->abort("unknown seeding algorithm $algo", EresseaRunner::STATUS_PARAMETER);
         }
-        $scriptname = $this->get_base_directory() . "/scripts/seeding/autoseed.lua";
+        $scriptname = "seeding/autoseed.lua";
 
-        chdir($gamedir);
-        $lua_path=getenv("LUA_PATH");
-        if ($lua_path === false) $lua_path = '';
-
-        // TODO eval ($luarocks path) ??
-
-        putenv("LUA_PATH=" . $this->get_base_directory() . "/scripts/?.lua;./?.lua;$lua_path");
-
-        passthru('echo $LUA_PATH');
-
-        passthru("./eressea $scriptname");
+        $this->call_eressea($scriptname);
 
         if ($replace) {
             $turn = $this->get_current_turn();
@@ -515,6 +519,34 @@ EOF;
             }
 
         }
+    }
+
+    function set_lua_path() {
+        if ($this->lua_path == null) {
+            // TODO eval ($luarocks path) ??
+            $lua_path=getenv("LUA_PATH");
+            if ($lua_path === false) $lua_path = '';
+            putenv("LUA_PATH=" . $this->get_base_directory() . "/scripts/?.lua;./?.lua;$lua_path");
+            exec('echo $LUA_PATH', $out);
+            $this->lua_path = $out[0];
+        }
+    }
+
+    function call_eressea(string $script) {
+        $this->set_lua_path();
+
+        if (strpos($script, ".") == 0) {
+            $scriptname = $script;
+        } else {
+            $scriptname = $this->get_base_directory() . "/scripts/$script";
+        }
+        passthru("./eressea $scriptname");
+    }
+
+    function cmd_editor(array $pos_args) {
+        $this->goto_game();
+
+        $this->call_eressea("editor.lua");
     }
 
     private function backup_file($filename) {
@@ -726,6 +758,8 @@ if ('help' == $command) {
         $runner->cmd_game($pos_args);
     } elseif ('seed' == $command) {
         $runner->cmd_seed($pos_args);
+    } elseif ('gmtool' == $command) {
+        $runner->cmd_editor($pos_args);
     } else {
         $msg = "unknown command '$command'";
         if ($verbosity > 0)
