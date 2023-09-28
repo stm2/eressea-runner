@@ -31,6 +31,7 @@ class EresseaRunner {
     function usage(bool $short = true, int $exit = NULL, string $command = NULL) {
         $name = $this->scriptname;
         $help_game = "game <rules>";
+        $help_seed = "seed [-r] [<algorithm>]";
 
         if ($command == NULL) {
             echo <<<EOL
@@ -49,12 +50,8 @@ EOL;
 
     -l <log level>
     -v <verbosity>
-        0: quiet
-        1: normal
-        2: verbose
-        3: debug
-
-    -y
+        0 = quiet, 1 = normal, 2 = verbose, 3 = debug
+    -y:
         do not ask for confirmation or user input whenever possible
 
 
@@ -63,7 +60,8 @@ COMMANDS
     These commands are available:
 
     help
-        display help information
+        display help information; try help <command> or help config for information about a
+        command or the configuration file
 
     TODO
 
@@ -75,7 +73,7 @@ COMMANDS
         start a new game
     gmtool
         open the game editor
-    seed <algorithm>
+    $help_seed
         seed new players
     write_reports [<faction id> ...]
         write reports for all or some factions
@@ -94,6 +92,41 @@ COMMANDS
     backup
         backup relevant data for this turn
 
+
+EOL;
+            }
+        } else {
+            echo "USAGE:\n";
+            if ('config_not_found' == $command) {
+                echo "You can create a config file with the install or the create_config command.\n";
+                echo "You can manually set the location of the config file with the -c parameter.\n";
+            } else if ("game" == $command) {
+                echo "    $name $help_game\n";
+                echo "        you can use -g and -t to set the game ID and start turn, respectively\n";
+                echo "        <rules> is the rule set (e2 or e3)\n";
+            } else if ("seed" == $command) {
+                echo "    $name $help_seed\n";
+                echo <<<EOL
+        This command reads the newfactions file in the game directory. This file contains one line for
+        each new faction. A line contains an email address, a race, a langugage code (de or en), and
+        optional additonal parameters all separated by one or more white space charaters. Lines starting
+        with # are ignored.
+
+        It then uses the given algorithm to create a new map and place the new factions on it. It also
+        creates a file "autoseed.json" in the game directory. You can edit the file to change the
+        behavior of the seeding algorithm.
+
+        If you don't specify an algorithm or if the algorithm in the autoseed.json file matches the given
+        algorithm, the file is read and the algorithm from the configuration file is executed with the
+        given parameters.
+
+        The generated map is saved to auto.dat in the data directory. If the -r option is given, it the
+        current turn data in 'data/<turn>.dat' is also replaced with the generated map.
+
+EOL;
+
+            } else if ("config" == $command) {
+                echo <<<EOL
 THE CONFIG FILE
 
     The config file is in JSON format:
@@ -121,15 +154,10 @@ THE CONFIG FILE
       ]
     }
 
-
 EOL;
-            }
-        } else {
-            echo "USAGE:\n";
-            if ("game" == $command) {
-                echo "    $name $help_game\n";
-                echo "        you can use -g and -t to set the game ID and start turn, respectively\n";
-                echo "        <rules> is the rule set (e2 or e3)\n";
+
+            } else {
+                echo "No information on the command '$command'.\n";
             }
             echo "\n";
         }
@@ -140,34 +168,61 @@ EOL;
         }
     }
 
+    function info($msg) {
+        if ($this->verbosity > 0) {
+            echo "$msg\n";
+        }
+        Logger::info($msg);
+    }
+
+    function error($msg) {
+        if ($this->verbosity > 0) {
+            echo "$msg\n";
+        }
+        Logger::error($msg);
+    }
+
+    function log($msg) {
+        if ($this->verbosity > 1) {
+            echo "$msg\n";
+        }
+        Logger::info($msg);
+    }
+
+    function debug($msg) {
+        if ($this->verbosity > 2) {
+            echo "$msg\n";
+        }
+        Logger::debug($msg);
+    }
+
     function abort($msg, $exitcode) {
         if ($exitcode == self::STATUS_NORMAL) {
-            Logger::info($msg);
+            $this->info($msg);
         } else {
-            Logger::error($msg);
+            $this->error($msg);
         }
-        if ($this->verbosity > 0)
-            echo "$msg\n";
+
         if ($exitcode != self::STATUS_GOOD)
             exit($exitcode);
     }
 
-    function info($configfile, $argv, $pos_args) {
-        echo "\nworking directory: '" . getcwd() . "'\n";
-        echo "config: '$configfile'\n";
+    function cmd_info($configfile, $argv, $pos_args) {
+        $this->info("\nworking directory: '" . getcwd() . "'\n");
+        $this->info("config: '$configfile'\n");
         foreach ($pos_args as $key => $value) {
-            echo "arg[$key]: '$value'\n";
+            $this->log("arg[$key]: '$value'\n");
         }
 
         if (empty($pos_args[1])) {
-            Logger::error("missing argument");
+            $this->error("missing argument");
             // $this->usage($argv[0], 1);
         }
 
-        echo "\nbase dir: '" . $this->config['runner']['basedir'] . "'\n";
-        echo "log file: '" . $this->config['runner']['logfile'] ."'\n";
-        echo "server: '" . $this->config['runner']['serverdir'] . "'\n";
-        echo "games: '" . $this->config['runner']['gamedir'] . "'\n\n";
+        $this->info("\nbase dir: '" . $this->config['runner']['basedir'] . "'\n");
+        $this->info("log file: '" . $this->config['runner']['logfile'] ."'\n");
+        $this->info("server: '" . $this->config['runner']['serverdir'] . "'\n");
+        $this->info("games: '" . $this->config['runner']['gamedir'] . "'\n\n");
 
     }
 
@@ -178,11 +233,44 @@ EOL;
         $this->game_id = $id;
     }
 
+    public function get_current_game() {
+        $gamedir = $this->get_game_directory();
+        $currentdir = realpath(".");
+        if (dirname($currentdir) != $gamedir) {
+            $this->debug("not in $gamedir");
+            return null;
+        }
+        if (strpos($currentdir, "$gamedir/game-") == 0) {
+            $id = substr($currentdir, strlen("$gamedir/game-"));
+            $this->debug("found game dir $id");
+            return $id;
+        } else {
+            $this->debug("apparently not in $gamedir/game-id");
+        }
+        return -1;
+    }
+
     public function set_turn($turn) {
         if (intval($turn) != $turn || intval($turn) < 0) {
             $this->abort("turn must be a non-negative integer ($turn)", self::STATUS_PARAMETER);
         }
         $this->turn = $turn;
+    }
+
+    public function get_current_turn() {
+        if ($this->turn >= 0)
+            return $this->turn;
+        $turnfile = $this->get_game_directory($this->game_id) . "/turn";
+        if (!file_exists($turnfile))
+            $this->abort("turn not set and no turn file in " . basename(dirname($turnfile)), self::STATUS_EXECUTION);
+
+        $turn = file_get_contents($turnfile);
+        if ($turn === false || intval($turn) != $turn || intval($turn) < 0) {
+            $this->abort("invalid turn file in " . basename(dirname($turnfile)), self::STATUS_EXECUTION);
+        }
+        $turn = intval($turn);
+
+        return $turn;
     }
 
     public function set_verbosity($value) {
@@ -211,28 +299,26 @@ EOL;
         return $input !== false;
     }
 
-    function exec($cmd, $msg = null, $exitonfailure = true) {
-        if ($this->verbosity > 0)
-            echo "executing '$cmd'...";
-        Logger::debug($cmd);
+    function exec($cmd, $error_msg = null, $exitonfailure = true, &$result = null) {
+        $this->info("executing '$cmd'...");
 
         exec($cmd, $out, $result);
 
-        if ($this->verbosity > 0)
-            echo "done\n";
-
-        Logger::debug($out);
+        $this->info("done");
+        $this->debug($out);
 
         if ($result != 0) {
-            $this->abort(empty($msg)?"$cmd exited abnormally.\n":$msg, $exitonfailure?self::STATUS_EXECUTION:self::STATUS_GOOD);
+            $this->abort(empty($error_msg)?"$cmd exited abnormally.\n":$error_msg, $exitonfailure?self::STATUS_EXECUTION:self::STATUS_GOOD);
         }
 
-        return $result;
+        return $out;
     }
 
-    function install($pos_args, $update = false) {
+    function cmd_install($pos_args, $update = false) {
         $basedir = $this->get_base_directory();
 
+
+        // TODO check dependencies git cmake ...?
 
         $branch = $pos_args[1] ?? 'master';
         if (!$this->input("install branch: ", $branch))
@@ -261,7 +347,7 @@ EOL;
             abort($msg, self::STATUS_NORMAL);
         }
 
-        // doesn not work!
+        // does not work!
         // $this->exec("cd $basedir/eressea-source");
         chdir("$basedir/eressea-source");
 
@@ -280,6 +366,7 @@ EOL;
         $this->exec("s/runtests");
 
         $this->exec("s/install -f");
+
 
         $this->config['runner']['serverdir'] = $installdir;
         $this->config['runner']['gamedir'] = $gamedir;
@@ -309,7 +396,7 @@ EOF;
 #enno@eressea.test cat de
 EOF;
 
-    function new_game(array $pos_args) {
+    function cmd_game(array $pos_args) {
         $gamedir = $this->get_game_directory();
         chdir("$gamedir");
 
@@ -336,7 +423,7 @@ EOF;
         if (!empty($pos_args[1]))
             $rules = $pos_args[1];
 
-        if (!preg_match("/^[A-Za-z0-9_.-]*$/", $rules))
+        if (!preg_match("/^[A-Za-z0-9_.-]*\$/", $rules))
             $this->abort("invalid ruleset '$rules'", self::STATUS_PARAMETER);
 
         $serverdir = $this->get_server_directory();
@@ -363,6 +450,83 @@ EOF;
         symlink("$serverdir/bin", "bin");
     }
 
+    function cmd_seed(array $pos_args) {
+        if ($this->game_id >= 0) {
+            $gameid = $this->game_id;
+        } else {
+            $gameid = $this->get_current_game();
+            if ($gameid == null) {
+                $this->abort("Game id not set and not in game directory", self::STATUS_PARAMETER);
+            }
+            $this->game_id = $gameid;
+        }
+
+        $pos = 1;
+        $replace = false;
+        if (isset($pos_args[$pos]) && $pos_args[$pos] == '-r') {
+            $replace = true;
+            $pos++;
+        }
+
+        $algo = $pos_args[$pos] ?? "spiral";
+
+        $gamedir = $this->get_game_directory($gameid);
+        $configfile = $gamedir . "/autoseed.json";
+        if (file_exists($configfile)) {
+            $config = $this->parse_json($configfile);
+            if ($config['algo'] != null && isset($pos_args[0]) && $config['algo'] != $algo) {
+                $backup = $this->backup_file($configfile);
+                $this->info('Found existing autoseed.json file that does not match ' . $algo .
+                    ".\nMoving existing file to $backup.");
+                $config = [];
+            }
+        } else {
+            $config = [];
+        }
+
+
+        if ("spiral" == $algo) {
+            $config['algo'] = $algo;
+            $this->save_json($configfile, $config);
+        } else {
+            $this->abort("unknown seeding algorithm $algo", EresseaRunner::STATUS_PARAMETER);
+        }
+        $scriptname = $this->get_base_directory() . "/scripts/seeding/autoseed.lua";
+
+        chdir($gamedir);
+        $lua_path=getenv("LUA_PATH");
+        if ($lua_path === false) $lua_path = '';
+
+        // TODO eval ($luarocks path) ??
+
+        putenv("LUA_PATH=" . $this->get_base_directory() . "/scripts/?.lua;./?.lua;$lua_path");
+
+        passthru('echo $LUA_PATH');
+
+        passthru("./eressea $scriptname");
+
+        if ($replace) {
+            $turn = $this->get_current_turn();
+            if ($turn == -1) {
+                $this->error("No turn specified.");
+            } else {
+                $this->info("Copying auto.dat to $turn.dat");
+                copy('data/auto.dat', "data/$turn.dat");
+            }
+
+        }
+    }
+
+    private function backup_file($filename) {
+        for($i = 0; ; ++$i) {
+            $backupname = $filename . "~$i~";
+            if (!file_exists($backupname)) {
+                rename($filename, $backupname);
+                break;
+            }
+        }
+        return $backupname;
+    }
 
     private function sd(&$c, $path, $i, $default) {
        $step = $path[$i];
@@ -377,20 +541,25 @@ EOF;
         $this->sd($config, $path, 0, $default);
     }
 
-    function parse_config($configfile) {
+    function parse_json($configfile) {
         $config = NULL;
         if (file_exists($configfile) && is_readable($configfile)) {
             $raw = file_get_contents($configfile);
             if (empty($raw)) {
-                Logger::error("could not read config file '$configfile'");
+                $this->error("could not read config file '$configfile'");
             } else {
                 $config = json_decode($raw, true);
                 if ($config == null)
-                    Logger::error("invalid config file '$configfile'");
+                    $this->error("invalid config file '$configfile'");
             }
         } else {
-            Logger::error("config file '$configfile' not found");
+            $this->error("config file '$configfile' not found");
         }
+        return $config;
+    }
+
+    function parse_config($configfile) {
+        $config = $this->parse_json($configfile);
 
         if (empty($config))
             $config = [];
@@ -406,17 +575,23 @@ EOF;
         return $config;
     }
 
+    function save_json($configfile, $content) {
+        if (empty($configfile) || (file_exists($configfile) && !is_writable($configfile))) {
+            $this->error("cannot write to config file '$configfile");
+            return false;
+        } else {
+            file_put_contents($configfile, json_encode($content, JSON_PRETTY_PRINT), LOCK_EX);
+            $this->debug("wrote config file $configfile");
+            return true;
+        }
+    }
+
     function save_config() {
         $configfile = $this->config['configfile'];
-        echo "save $configfile\n";
-        if (empty($configfile) || (file_exists($configfile) && !is_writable($configfile))) {
-            Logger::error("cannot write to config file '$configfile");
-        } else {
-            $copy = $this->config;
-            unset($copy['configfile']);
-            file_put_contents($configfile, json_encode($copy, JSON_PRETTY_PRINT), LOCK_EX);
-            Logger::debug("wrote config file $configfile");
-        }
+        $this->info("save $configfile\n");
+        $copy = $this->config;
+        unset($copy['configfile']);
+        $this->save_json($configfile, $copy);
     }
 
     function get_base_directory() {
@@ -427,8 +602,12 @@ EOF;
         return $this->get_base_directory() . "/" . $this->config['runner']['serverdir'];
     }
 
-    function get_game_directory() {
-        return $this->get_base_directory() . "/" . $this->config['runner']['gamedir'];
+    function get_game_directory($id = null) {
+        $gamedir = realpath($this->get_base_directory() . "/" . $this->config['runner']['gamedir']);
+        if ($id == null)
+            return $gamedir;
+        else
+            return $gamedir . "/game-" . $id;
     }
 }
 
@@ -527,22 +706,26 @@ $logger->info("command $command");
 if ('help' == $command) {
     $runner->usage(false, EresseaRunner::STATUS_NORMAL, $pos_args[1] ?? NULL);
 } elseif ('install' == $command) {
-    $runner->install($pos_args);
+    $runner->cmd_install($pos_args);
 } elseif ('update' == $command) {
-    $runner->install($pos_args, true);
+    $runner->cmd_install($pos_args, true);
+} elseif ('create_config' == $command) {
+    $runner->save_config();
 } else {
     if (empty($configfile) || !file_exists($configfile)) {
-        $msg = "Config file '$configfile' not found. Either use the install command or the -c option";
+        $msg = "Config file '$configfile' not found.";
         $logger->error($msg);
         if ($verbosity > 0) {
             echo "$msg\n";
-            $runner->usage(true, EresseaRunner::STATUS_PARAMETER);
+            $runner->usage(true, false, 'config_not_found');
         }
         exit(EresseaRunner::STATUS_PARAMETER);
     } elseif ('info' == $command) {
-        $runner->info($configfile, $argv, $pos_args);
+        $runner->cmd_info($configfile, $argv, $pos_args);
     } elseif ('game' == $command) {
-        $runner->new_game($pos_args);
+        $runner->cmd_game($pos_args);
+    } elseif ('seed' == $command) {
+        $runner->cmd_seed($pos_args);
     } else {
         $msg = "unknown command '$command'";
         if ($verbosity > 0)

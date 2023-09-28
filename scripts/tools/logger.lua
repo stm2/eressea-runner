@@ -1,69 +1,75 @@
-local self = {}
+ELogger = {
+	DEBUG = 1,
+	INFO = 2,
+	ERROR = 3,
+	NONE = 99,
+}
 
-self.DEBUG = 1
-self.INFO = 2
-self.ERROR = 3
-self.NONE = 99
+function ELogger:new(o, pars, setter)
+	o = o or {}
+	setmetatable(o, self)
+   	self.__index = self
 
-local log_level = 2
-
-self.STDOUT_PRINTER = function(level, msg)
-	print(msg)
-end
-
-self.ERESSEA_PRINTER = function(level, msg)
-	if self.DEBUG == level then
-		eressea.log.debug(msg)
-	elseif self.INFO == level then
-		eressea.log.info(msg)
-	elseif self.ERROR == level then
-		eressea.log.error(msg)
+	self.STDOUT_PRINTER = function(level, msg)
+		print(msg)
 	end
-end
 
-self.PLAIN_FORMATTER = function(...)
-	local text
-	for _, s in ipairs({...}) do
-		if text == nil then
-			text = s
-		else
-			text = text .. "\t" .. tostring(s)
+	self.ERESSEA_PRINTER = function(level, msg)
+		if ELogger.DEBUG == level then
+			eressea.log.debug(msg)
+		elseif ELogger.INFO == level then
+			eressea.log.info(msg)
+		elseif ELogger.ERROR == level then
+			eressea.log.error(msg)
 		end
 	end
-	return text
+
+	self.PLAIN_FORMATTER = function(...)
+		local text
+		for _, s in ipairs({...}) do
+			if text == nil then
+				text = s
+			else
+				text = text .. "\t" .. tostring(s)
+			end
+		end
+		return text
+	end
+
+	self.log_level = 2
+	self.printer = ELogger.STDOUT_PRINTER
+	self.formatter = ELogger.PLAIN_FORMATTER
+
+   	return o
 end
 
-local printer = self.STDOUT_PRINTER
-local formatter = self.PLAIN_FORMATTER
 
-function self.set_printer(p)
-	printer = p
+function ELogger:set_printer(p)
+	self.printer = p
 end
 
-function self.set_formatter(f)
-	formatter = f
+function ELogger:set_formatter(f)
+	self.formatter = f
 end
 
-function self.log(level, ...)
-	if level >= log_level then
-		printer(level, formatter(...))
+function ELogger:log(level, ...)
+	if level >= self.log_level then
+		self.printer(level, self.formatter(...))
 	end
 end
 
-function self.set_level(l)
-	log_level = l
+function ELogger:set_level(l)
+	self.log_level = l
 end
 
-function self.debug(...)
-	self.log(self.DEBUG, ...)
+function ELogger:debug(...)
+	self:log(self.DEBUG, ...)
 end
 
-function self.info(...)
-	self.log(self.INFO, ...)
+function ELogger:info(...)
+	self:log(self.INFO, ...)
 end
 
-function self.error(...)
-	self.log(self.ERROR, ...)
+function ELogger:error(...)
+	self:log(self.ERROR, ...)
 end
-
-return self

@@ -1,3 +1,11 @@
+## Requirements
+
+    * git, php, json-lua, cmake, gcc ...
+
+````shell
+luarocks install lunajson
+```
+
 
 ## Usage
 `eressea-runner.sh [-f <configfile>] [-y] [-l <log level>] [-v <verbosity>] [-g <game-id>] [-t <turn>] <command> [<args> ...]`

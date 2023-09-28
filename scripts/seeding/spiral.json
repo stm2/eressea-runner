@@ -1,0 +1,23 @@
+{
+    "algo": "spiral",
+    "parameters": {
+        "island_distance": {
+            "default": 5
+        },
+        "min_islands": {
+            "default": 2
+        },
+        "mountains_per_faction": {
+            "default": 0.5
+        },
+        "num_players": {
+            "default": -1
+        },
+        "players_per_island": {
+            "default": 5
+        },
+        "regions_per_player": {
+            "default": 3
+        }
+    }
+}

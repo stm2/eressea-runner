@@ -2,8 +2,9 @@ require 'config'
 require 'tools.build-e3'
 auto = require 'eressea.autoseed'
 
-local players = auto.read_players()
-size =  #players*5
+local players = require 'seeding.players'
+local newplayers = players.read_newfactions()
+size =  #newplayers*5
 eressea.free_game()
 
 pl = plane.create(0, -400, -400, 800, 800)

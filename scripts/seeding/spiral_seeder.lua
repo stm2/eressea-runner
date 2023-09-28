@@ -1,57 +1,73 @@
-local self = {}
+require 'seeding.parameters'
+require 'tools.logger'
 
-local my_logger
+SpiralSeeder = {
+num_players = -1,
+players_per_island = 5,
+regions_per_player = 3,
+island_distance = 5,
+min_islands = 2,
+mountains_per_faction = .5,
+}
 
-if logger == nil then
-	my_logger = require 'tools.logger'
-else
-	my_logger = logger
+-- class variable
+
+local my_logger = nil
+
+function SpiralSeeder:new(o)
+	o = o or {}
+	setmetatable(o, self)
+   	self.__index = self
+
+   	if my_logger == nil then
+		if logger == nil then
+			my_logger = new ELogger()
+		else
+			my_logger = logger
+		end
+	end
+
+	local function set_parameters(pars)
+		self:set_all(pars)
+	end
+
+	self.parameters = Parameters:new(nil, {
+		['num_players'] = -1,
+		['players_per_island'] = 5,
+		['regions_per_player'] = 3,
+		['island_distance'] = 5,
+		['min_islands'] = 2,
+		['mountains_per_faction'] = .5,
+		}, set_parameters)
+	self.parameters:set_values({})
+
+	return o
 end
 
-local num_players = -1
-
-local players_per_island = 11
-local regions_per_player = 3
-local island_distance = 5
-local min_islands = 2
-local mountains_per_faction = .5
-
-
-local function set_parameters(parameters)
-	local p = parameters['num_players']
-	num_players = p.value or p.default
-	local p = parameters['players_per_island']
-	players_per_island = p.value or p.default
-	local p = parameters['regions_per_player']
-	regions_per_player = p.value or p.default
-	local p = parameters['island_distance']
-	island_distance = p.value or p.default
-	local p = parameters['min_islands']
-	min_islands = p.value or p.default
-	local p = parameters['mountains_per_faction']
-	mountains_per_faction = p.value or p.default
+local function set_pvalue(p)
+	return p.value or p.default
 end
 
-local parameters
-
-function self.set_parameters(pars)
-	parameters.set_values(pars)
+function SpiralSeeder:get_parameters()
+	return self.parameters:get_parameters()
 end
 
+function SpiralSeeder:set_parameters(pars)
+	self.parameters:set_values(pars)
+end
 
-parameters = require 'seeding.parameters'
-parameters = parameters.create({
-	['num_players'] = -1,
-	['players_per_island'] = 11,
-	['regions_per_player'] = 3,
-	['island_distance'] = 5,
-	['min_islands'] = 2,
-	['mountains_per_faction'] = .5,
-}, set_parameters)
+function SpiralSeeder:set_all(parameters)
+	self.num_players = set_pvalue(parameters.num_players)
+	self.players_per_island = set_pvalue(parameters.players_per_island)
+	self.regions_per_player = set_pvalue(parameters.regions_per_player)
+	self.island_distance = set_pvalue(parameters.island_distance)
+	self.min_islands = set_pvalue(parameters.min_islands)
+	self.mountains_per_faction = set_pvalue(parameters.mountains_per_faction)
+end
+
 
 -- debug variable
-local bloat = 4
-
+local bloat = 1
 
 local function shuffle(tab)
 	if type(tab) ~= 'table' then return end
@@ -65,7 +81,6 @@ local function shuffle(tab)
 	end
 	return tab
 end
-
 
 local function simple_spiral(x, y)
 	local dist = distance(0, 0, x, y)
@@ -140,7 +155,7 @@ end
 
 local function distributed_regions(x, y, num)
 	if get_region(x, y) == nil then
-		my_logger.error("no region at", x, y)
+		my_logger:error("no region at", x, y)
 		return
 	end
 	local island = find_island(x, y)
@@ -148,15 +163,15 @@ local function distributed_regions(x, y, num)
 	for i = 1, num do
 		local index = rng_int() % #island
 		table.insert(pos, island[index + 1])
-		--my_logger.debug(i, #island, island[index + 1])
+		--my_logger:debug(i, #island, island[index + 1])
 	end
 	for it = 1, #pos do
-		my_logger.debug("it", it)
+		my_logger:debug("it", it)
 		local change = 0
 		local sum = 0
 		for i, r in ipairs(pos) do
 			local bestr, bestenergy = r, get_energy(r, r, pos)
-			--my_logger.debug(r.x, r.y, bestr, bestenergy)
+			--my_logger:debug(r.x, r.y, bestr, bestenergy)
 			local xn, yn = r.x, r.y
 			--for _, rn in ipairs(island) do
 			for nbor = 1, 6 do
@@ -164,22 +179,22 @@ local function distributed_regions(x, y, num)
         		local rn = get_region(xn, yn)
         	if table.contains(island, rn) then
         		local energy = get_energy(r, rn, pos)
-					--my_logger.debug(rn.x, rn.y, energy)
+					--my_logger:debug(rn.x, rn.y, energy)
 					if energy < bestenergy then
 						bestr, bestenergy = rn, energy
 					end
 				end
 			end
-			--my_logger.debug("", bestr, bestenergy)
+			--my_logger:debug("", bestr, bestenergy)
 			sum = sum + bestenergy
 			local rf = bestr
 			if rf ~= nil and rf ~= r and table.contains(island, rf) then
 				pos[i] = rf
 				change = change + 1
-				--my_logger.debug(r, "->", rf)
+				--my_logger:debug(r, "->", rf)
 			end
 		end
-		my_logger.debug("energy", sum)
+		my_logger:debug("energy", sum)
 		if change == 0 then break end
 	end
 	return pos
@@ -201,10 +216,8 @@ local function seed(r, email, race, lang)
 	assert(f)
 	local u = unit.create(f, r)
 	assert(u)
-	equip_unit(u, "seed_faction")
-	equip_unit(u, "seed_unit")
-    -- equip_unit(u, "seed_" .. race, 7)
-    equip_unit(u, "first_unit", 7)
+
+    equip_unit(u, "first_unit", 255)
     f:set_origin(r)
     return f
 end
@@ -241,8 +254,6 @@ local function count_neighbors(r, terrain)
 	return count
 end
 
-
-
 local function swap_aquarians(r, start_regions)
 	for u in r.units do
 		if u.race == 'aquarian' then
@@ -250,14 +261,14 @@ local function swap_aquarians(r, start_regions)
 				for _, r2 in ipairs(start_regions) do
 					if count_neighbors(r2, "ocean") > 0 then
 						if r2.units() == nil then
-							my_logger.info("moving landlocked aquarian " .. tostring(u.faction) .. " from " .. tostring(r) .. " to " .. tostring(r2))
+							my_logger:info("moving landlocked aquarian " .. tostring(u.faction) .. " from " .. tostring(r) .. " to " .. tostring(r2))
 							move_faction(u.faction, r, r2)
 							return true
 						end
 						if false then
 						for u2 in r2.units do
 							if u2.race ~= 'aquarian' then
-								my_logger.info("switching landlocked aquarian " .. tostring(u.faction) .. " with " .. tostring(u2.faction) .. " from " .. tostring(r) .. " to ", tostring(r2))
+								my_logger:info("switching landlocked aquarian " .. tostring(u.faction) .. " with " .. tostring(u2.faction) .. " from " .. tostring(r) .. " to ", tostring(r2))
 								move_faction(u.faction, r, r2)
 								move_faction(u2.faction, r2, r)
 								return true
@@ -272,10 +283,9 @@ local function swap_aquarians(r, start_regions)
 	return false
 end
 
-local function improve_start(start_regions)
+function SpiralSeeder:improve_start(start_regions)
 	local r0 = nil
 	for _, r in ipairs(start_regions) do
-		r.terrain = 'plain'
 		while swap_aquarians(r, start_regions) do end
 		r0 = r
 	end
@@ -288,9 +298,9 @@ local function improve_start(start_regions)
 			table.insert(mountains, r)
 		end
 	end
-	while #mountains / #start_regions < mountains_per_faction do
+	while #mountains / #start_regions < self.mountains_per_faction do
 		local rbest, dist = 0
-		local rmax, dmax = null, 0
+		local rmax, dmax = null, -1
 		for _, r in ipairs(island) do
 			if r.terrain ~= 'plain' and r.terrain ~= 'mountain' then
 				local dist = 0
@@ -305,25 +315,35 @@ local function improve_start(start_regions)
 			end
 		end
 		if rmax == nil then
-			my_logger.info("could not create enough mountains: " .. #mountains .. " < " .. mountains_per_faction * #start_regions)
+			my_logger:info("could not create enough mountains: " .. #mountains .. " < " .. self.mountains_per_faction * #start_regions)
 			break
 		end
-		my_logger.info("growing a mountain at " .. tostring(rmax))
+		my_logger:info("growing a mountain at " .. tostring(rmax))
 		rmax.terrain = 'mountain'
 		table.insert(mountains, rmax)
 	end
 
 end
 
-
-function self.seed(newplayers)
+function SpiralSeeder:seed(newplayers)
 	if newplayers == nil then newplayers = {} end
+
+	self.parameters:set_values({})
+
+	local num_players = self.num_players
+	local players_per_island = self.players_per_island
+	local regions_per_player = self.regions_per_player
+	local island_distance = self.island_distance
+	local min_islands = self.min_islands
+	local mountains_per_faction = self.mountains_per_faction
+
+
 	if num_players == -1 then
 		num_players = #newplayers
 	end
 
 	if num_players == 0 then
-		my_logger.info("no players")
+		my_logger:info("no players")
 		return
 	end
 
@@ -335,7 +355,15 @@ function self.seed(newplayers)
 
 	local radius = math.floor((math.sqrt(players_per_island*regions_per_player / 3))) + 4 + island_distance
 
-	my_logger.info(num_players, regions_per_player, players_per_island, num_islands)
+	my_logger:info(string.format(
+		"seeding with %d, players, %d players per island, %d minimum islands, %d islands," ..
+		" %d regions per player, %f mountains per faction",
+		num_players,
+		players_per_island,
+		min_islands,
+		num_islands,
+		regions_per_player,
+		mountains_per_faction))
 
 	pl = plane.create(0, -400, -400, 800, 800)
 
@@ -366,14 +394,12 @@ function self.seed(newplayers)
 			else
 				if seeded > #newplayers then p.email = p.email .. "1" end
 				local f = seed(start, p.email, p.race or "human", p.lang or "de")
-				my_logger.info("seeding " .. f.name .. " " .. f.email .. " " .. f.race .. " at ", start)
+				my_logger:info("seeding " .. f.name .. " " .. f.email .. " " .. f.race .. " at ", start)
 			end
 		end
 
-		improve_start(start_regions)
+		self:improve_start(start_regions)
 
 		x, y = next_spiral(x, y, 0, 0, radius)
 	end
 end
-
-return self

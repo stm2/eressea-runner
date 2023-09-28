@@ -1,37 +1,53 @@
-local self = {}
+require 'tools.helpers'
 
-function self.create(pars, setter)
-	local self = {}
+Parameters = {
+	parameters = {},
+	setter = nil,
+}
 
-	local parameters = {}
-	local setter = setter
+function Parameters:new(o, pars, setter)
+	o = o or {}
+	setmetatable(o, self)
+   	self.__index = self
+
+	self.parameters = {}
+	self.setter = setter
 
 	for k, p in pairs(pars) do
-		parameters[k] = { ['default'] = p }
+		self.parameters[k] = { ['default'] = p }
 	end
 
-
-	function self.parameters()
-		return parameters
-	end
-
-	function self.parameter_values()
-		local v = {}
-		for k, p in pairs(parameters) do
-			v[k] = p.value or p.default
-		end
-		return v
-	end
-
-	function self.set_values(pars)
-		for par, val in pairs(parameters) do
-			if pars[par] ~= nil then val.value = pars[par] end
-		end
-		setter(parameters)
-	end
-
-	setter(parameters)
-	return self
+	--setter(self.parameters)
+	return o
 end
 
-return self
+function Parameters:get_parameters()
+	return self.parameters
+end
+
+function Parameters:parameter_values()
+	local v = {}
+	for k, p in pairs(self.parameters) do
+		v[k] = p.value or p.default
+	end
+	return v
+end
+
+function Parameters:set_values(pars)
+	for par, val in pairs(self.parameters) do
+		if pars[par] ~= nil then
+			if pars[par] ~= nil then
+				if type(pars[par]) == 'table' then
+					if pars[par].value ~= nil then
+						val.value = pars[par].value
+					elseif pars[par].default == nil then
+						val.value = pars[par]
+					end
+				else
+					val.value = pars[par]
+				end
+			end
+		end
+	end
+	self.setter(self.parameters)
+end
