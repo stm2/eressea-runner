@@ -24,6 +24,8 @@ class EresseaRunner {
     /** error during execution */
     const STATUS_EXECUTION = 3;
 
+    const GAME_ID_PATTERN = "/^[\p{L}\p{N}]+$/";
+
     function set_scriptname(string $name) {
         $this->scriptname = $name;
     }
@@ -33,6 +35,8 @@ class EresseaRunner {
         $name = $this->scriptname;
         $help_game = "game <rules>";
         $help_seed = "seed [-r] [<algorithm>]";
+        $help_reports = "reports [-p]";
+        $help_eressea = "eressea [args ...]";
 
         if ($command == NULL) {
             echo <<<EOL
@@ -72,12 +76,14 @@ COMMANDS
         recompile and install from source
     $help_game
         start a new game
+    $help_eressea
+        call the eressea server
     gmtool
         open the game editor
     $help_seed
         seed new players
-    write_reports [<faction id> ...]
-        write reports for all or some factions
+    $help_reports
+        write reports for all factions
     send [<faction id> ...]
         send reports for all or some factions
     fetch
@@ -105,6 +111,17 @@ EOL;
                 echo "    $name $help_game\n";
                 echo "        you can use -g and -t to set the game ID and start turn, respectively\n";
                 echo "        <rules> is the rule set (e2 or e3)\n";
+            } else if ("eressea" == $command) {
+                echo "    $name $help_eressea\n";
+                echo "        call the eressea server with the given arguments\n\n";
+                $eressea = $this->get_server_directory() . "/bin/eressea";
+                if (is_executable($eressea)) {
+                    if (chdir(dirname($eressea))) {
+                        putenv("PATH=.");
+                        passthru("eressea --help");
+                    }
+                } else
+                    echo "eressea executable no found; did you run $name install?\n";
             } else if ("seed" == $command) {
                 echo "    $name $help_seed\n";
                 echo <<<EOL
@@ -126,6 +143,14 @@ EOL;
 
 EOL;
 
+            } else if ("reports" == $command) {
+                echo "    $name $help_reports\n";
+                echo <<<EOL
+        Write all report files. With -p it also re-generates all the passwords and writes them back to the
+        report. Note that, if you run it without -p, there will be no new password messages in the reports
+        and no passwords in the turn templates for new factions.
+
+EOL;
             } else if ("config" == $command) {
                 echo <<<EOL
 THE CONFIG FILE
@@ -198,13 +223,13 @@ EOL;
     }
 
     function abort($msg, $exitcode) {
-        if ($exitcode == self::STATUS_NORMAL) {
+        if ($exitcode == static::STATUS_NORMAL) {
             $this->info($msg);
         } else {
             $this->error($msg);
         }
 
-        if ($exitcode != self::STATUS_GOOD)
+        if ($exitcode != static::STATUS_GOOD)
             exit($exitcode);
     }
 
@@ -215,7 +240,7 @@ EOL;
             $this->log("arg[$key]: '$value'\n");
         }
 
-        if (empty($pos_args[1])) {
+        if (empty($pos_args[0])) {
             $this->error("missing argument");
             // $this->usage($argv[0], 1);
         }
@@ -227,10 +252,10 @@ EOL;
 
     }
 
-    public function set_game($id) {
-        if (intval($id) != $id || intval($id) <= 0) {
-            $this->abort("ID must be a positive integer ($id)", self::STATUS_PARAMETER);
-        }
+    public function set_game(string $id) {
+        if (preg_match(static::GAME_ID_PATTERN, $id) !== 1)
+            $this->abort("game ID should be a positive integer ($id)", static::STATUS_PARAMETER);
+
         $this->game_id = $id;
     }
 
@@ -241,8 +266,12 @@ EOL;
             $this->debug("not in $gamedir");
             return null;
         }
-        if (strpos($currentdir, "$gamedir/game-") == 0) {
+        if (strpos($currentdir, "$gamedir/game-") === 0) {
             $id = substr($currentdir, strlen("$gamedir/game-"));
+            if (!preg_match(static::GAME_ID_PATTERN, $id)) {
+                $this->debug("invalid game id $id");
+                return -1;
+            }
             $this->debug("found game dir $id");
             return $id;
         } else {
@@ -253,7 +282,7 @@ EOL;
 
     public function set_turn($turn) {
         if (intval($turn) != $turn || intval($turn) < 0) {
-            $this->abort("turn must be a non-negative integer ($turn)", self::STATUS_PARAMETER);
+            $this->abort("turn must be a non-negative integer ($turn)", static::STATUS_PARAMETER);
         }
         $this->turn = $turn;
     }
@@ -263,11 +292,11 @@ EOL;
             return $this->turn;
         $turnfile = $this->get_game_directory($this->game_id) . "/turn";
         if (!file_exists($turnfile))
-            $this->abort("turn not set and no turn file in " . basename(dirname($turnfile)), self::STATUS_EXECUTION);
+            $this->abort("turn not set and no turn file in " . basename(dirname($turnfile)), static::STATUS_EXECUTION);
 
         $turn = file_get_contents($turnfile);
         if ($turn === false || intval($turn) != $turn || intval($turn) < 0) {
-            $this->abort("invalid turn file in " . basename(dirname($turnfile)), self::STATUS_EXECUTION);
+            $this->abort("invalid turn file in " . basename(dirname($turnfile)), static::STATUS_EXECUTION);
         }
         $turn = intval($turn);
 
@@ -300,6 +329,19 @@ EOL;
         return $input !== false;
     }
 
+    function chdir(string $dirname, bool $abort = true) {
+        if (!chdir($dirname)) {
+            $ms = "could not enter directory $dirname";
+            if ($abort)
+                $this->abort($msg, static::STATUS_EXECUTION);
+            else
+                $this->error($msg);
+            return false;
+        }
+        return true;
+    }
+
+
     function exec($cmd, $error_msg = null, $exitonfailure = true, &$result = null) {
         $this->info("executing '$cmd'...");
 
@@ -309,7 +351,7 @@ EOL;
         $this->debug($out);
 
         if ($result != 0) {
-            $this->abort(empty($error_msg)?"$cmd exited abnormally.\n":$error_msg, $exitonfailure?self::STATUS_EXECUTION:self::STATUS_GOOD);
+            $this->abort(empty($error_msg)?"$cmd exited abnormally.\n":$error_msg, $exitonfailure?static::STATUS_EXECUTION:static::STATUS_GOOD);
         }
 
         return $out;
@@ -321,19 +363,19 @@ EOL;
 
         // TODO check dependencies git cmake ...?
 
-        $branch = $pos_args[1] ?? 'master';
+        $branch = $pos_args[0] ?? 'master';
         if (!$this->input("install branch: ", $branch))
-            exit(self::STATUS_NORMAL);
+            exit(static::STATUS_NORMAL);
         if ($branch !== 'master')
             if (!$this->confirm("Installing versions other than the master branch is unsafe. Continue?"))
-                exit(self::STATUS_NORMAL);
+                exit(static::STATUS_NORMAL);
 
-        $installdir = $pos_args[2] ?? $basedir . '/server';
+        $installdir = $pos_args[1] ?? $basedir . '/server';
         // if (!$this->input("install server in ", $installdir))
-        //     exit(self::STATUS_NORMAL);
-        $gamedir = $pos_args[3] ?? $basedir;
+        //     exit(static::STATUS_NORMAL);
+        $gamedir = $pos_args[2] ?? $basedir;
         // if (!$this->input("install games in ", $gamedir))
-        //     exit(self::STATUS_NORMAL);
+        //     exit(static::STATUS_NORMAL);
 
         if (!str_starts_with($installdir, "/"))
             $installdir = $basedir . "/" . $installdir;
@@ -341,16 +383,16 @@ EOL;
             $gamedir = $basedir . "/" . $gamedir;
 
         if (!$this->confirm("install branch $branch of server in $installdir, games in $gamedir?"))
-            exit(self::STATUS_NORMAL);
+            exit(static::STATUS_NORMAL);
 
         if (!$update && file_exists($installdir)) {
             $msg = "installation directory exits, please use the update command";
-            abort($msg, self::STATUS_NORMAL);
+            abort($msg, static::STATUS_NORMAL);
         }
 
         // does not work!
         // $this->exec("cd $basedir/eressea-source");
-        chdir("$basedir/eressea-source");
+        $this->chdir("$basedir/eressea-source");
 
         $this->exec("git fetch");
 
@@ -372,7 +414,7 @@ EOL;
         $this->config['runner']['serverdir'] = $installdir;
         $this->config['runner']['gamedir'] = $gamedir;
 
-        chdir($basedir);
+        $this->chdir($basedir);
         $this->save_config();
     }
 
@@ -399,7 +441,7 @@ EOF;
 
     function cmd_game(array $pos_args) {
         $gamedir = $this->get_game_directory();
-        chdir("$gamedir");
+        $this->chdir($gamedir);
 
         $game_id = $this->game_id;
         $gamesub = "game-$game_id";
@@ -413,7 +455,7 @@ EOF;
         }
 
         if (file_exists("$gamedir/$gamesub")) {
-            $this->abort("game dir " . realpath("$gamedir/$gamesub") . " already exists", self::STATUS_EXECUTION);
+            $this->abort("game dir " . realpath("$gamedir/$gamesub") . " already exists", static::STATUS_EXECUTION);
         }
 
         $turn = $this->turn;
@@ -421,62 +463,69 @@ EOF;
             $turn = 0;
 
         $rules = "e2";
-        if (!empty($pos_args[1]))
-            $rules = $pos_args[1];
+        if (!empty($pos_args[0]))
+            $rules = $pos_args[0];
 
         if (!preg_match("/^[A-Za-z0-9_.-]*\$/", $rules))
-            $this->abort("invalid ruleset '$rules'", self::STATUS_PARAMETER);
+            $this->abort("invalid ruleset '$rules'", static::STATUS_PARAMETER);
 
         $serverdir = $this->get_server_directory();
         $config =  "$serverdir/conf/$rules/config.json";
         if (!file_exists($config))
-            $this->abort("cannot find config $config", self::STATUS_PARAMETER);
+            $this->abort("cannot find config $config", static::STATUS_PARAMETER);
 
 
         if (!$this->confirm("create game with rules $rules in '$gamesub'?"))
-            exit(self::STATUS_NORMAL);
+            exit(static::STATUS_NORMAL);
 
         mkdir($gamesub);
-        chdir($gamesub);
+        $this->chdir($gamesub);
         mkdir("data");
         mkdir("reports");
 
         file_put_contents("eressea.ini",
-            sprintf(self::INI_TEMPLATE, $game_id, $turn, $serverdir, $rules));
+            sprintf(static::INI_TEMPLATE, $game_id, $turn, $serverdir, $rules));
         file_put_contents("turn", "$turn");
-        file_put_contents("newfactions", self::NEWFACTIONS_TEMPLATE);
+        file_put_contents("newfactions", static::NEWFACTIONS_TEMPLATE);
         symlink("$serverdir/bin/eressea", "eressea");
         symlink("$serverdir/scripts", "scripts");
         symlink("$serverdir/scripts/config.lua", "config.lua");
         symlink("$serverdir/bin", "bin");
     }
 
+    function cmd_eressea($pos_args) {
+        $this->goto_game();
+
+        $this->call_eressea('', $pos_args);
+    }
+
     function check_game() {
-        if ($this->game_id >= 0) {
+        if ($this->game_id != -1) {
             $gameid = $this->game_id;
         } else {
             $gameid = $this->get_current_game();
-            if ($gameid == null) {
-                $this->abort("Game id not set and not in game directory", self::STATUS_PARAMETER);
+            if ($gameid === -1) {
+                $this->abort("Game id not set and not in game directory", static::STATUS_PARAMETER);
             }
             $this->game_id = $gameid;
         }
 
         $gamedir = $this->get_game_directory($gameid);
-        chdir($gamedir);
+        $this->chdir($gamedir);
 
         return $gameid;
     }
 
     function goto_game() {
         $gameid = $this->check_game();
-        $this->get_game_directory();
+        $gamedir = $this->get_game_directory($gameid);
+        return $this->chdir($gamedir);
     }
 
     function cmd_seed(array $pos_args) {
         $this->goto_game();
 
-        $pos = 1;
+        $pos = 0;
         $replace = false;
         if (isset($pos_args[$pos]) && $pos_args[$pos] == '-r') {
             $replace = true;
@@ -503,7 +552,7 @@ EOF;
             $config['algo'] = $algo;
             $this->save_json($configfile, $config);
         } else {
-            $this->abort("unknown seeding algorithm $algo", EresseaRunner::STATUS_PARAMETER);
+            $this->abort("unknown seeding algorithm $algo", static::STATUS_PARAMETER);
         }
         $scriptname = "seeding/autoseed.lua";
 
@@ -532,21 +581,110 @@ EOF;
         }
     }
 
-    function call_eressea(string $script) {
+    function call_eressea(string $script, array $args = []) {
         $this->set_lua_path();
 
-        if (strpos($script, ".") == 0) {
+        if (empty($script)) {
+            $scriptname = '';
+        } elseif (strpos($script, ".") === 0) {
             $scriptname = $script;
         } else {
             $scriptname = $this->get_base_directory() . "/scripts/$script";
         }
-        passthru("./eressea $scriptname");
+        $argstring = "";
+
+        foreach($args as $arg) {
+            $argstring .= " " . escapeshellarg($arg);
+        }
+        echo "./eressea $argstring $scriptname\n";
+        return passthru("./eressea $argstring $scriptname") === null;
+    }
+
+    function call_script(string $script, array $args = []) {
+        $this->set_lua_path();
+
+        if (empty($script)) {
+            $this->abort("empty script", static::STATUS_EXECUTION);
+        } elseif (strpos($script, "/") === 0) {
+            $this->info("ATTENTION! Calling script with absolute path $script.");
+            $scriptname = $script;
+        } else {
+            $scriptname = $this->get_server_directory() . "/bin/$script";
+        }
+
+        if (!is_executable($scriptname)) {
+            $this->abort("$script not executable", static::STATUS_EXECUTION);
+        }
+
+        putenv('ERESSEA=' . $this->get_base_directory());
+
+        $argstring = "";
+
+        foreach($args as $arg) {
+            $argstring .= " " . escapeshellarg($arg);
+        }
+        echo "$scriptname $argstring\n";
+        return passthru("$scriptname $argstring") ===   null;
     }
 
     function cmd_editor(array $pos_args) {
         $this->goto_game();
 
         $this->call_eressea("editor.lua");
+    }
+
+    function cmd_reports(array $pos_args) {
+        $this->goto_game();
+
+        $this->info("deleting old reports");
+        $this->exec("rm -rf reports");
+
+        $this->info("writing new files");
+        if (isset($pos_args[0]) && $pos_args[0] == '-r')
+            $this->call_eressea("write_files_only.lua");
+        else
+            $this->call_eressea("write_files_pw.lua");
+    }
+
+    function check_email() {
+        if (isset($config['runner']['muttr']))
+            return true;
+
+        $this->abort("E-mail is not configured. Please set it up with the command mail_install.", static::STATUS_EXECUTION);
+    }
+
+     function cmd_send(array $pos_args) {
+        if (count($pos_args) > 0)
+            $this->abort("additional arguments not implemented", static::STATUS_PARAMETER);
+
+        $this->goto_game();
+        $this->chdir("reports");
+        if (!file_exists("reports.txt"))
+            $this->abort("missing reports.txt for game " . $this->$game_id);
+
+        $this->check_email();
+
+        $this->call_script("compress.sh", [$this->game_id]);
+
+        if (empty(glob("[a-kLm-z0-9]*.sh")))
+            $this->abort("no send scripts in " . getcwd(), static::STATUS_EXECUTION);
+
+        $this->call_script("sendreports.sh", [$this->game_id]);
+
+  //         sent=0
+  // assert_dir $GAMEDIR/reports
+  // cd $GAMEDIR/reports
+  // [ -f reports.txt ] || abort "missing reports.txt for game $game"
+  // for faction in $* ; do
+  //   send_report $faction
+  //   sent=1
+  // done
+  // if [ $sent -eq 0 ]; then
+  //   for faction in $(cat reports.txt | cut -f1 -d: | cut -f2 -d=); do
+  //     send_report $faction
+  //   done
+  // fi
+
     }
 
     private function backup_file($filename) {
@@ -732,11 +870,12 @@ $logger->debug($argv);
 $pos_args = array_slice($argv, $optind);
 
 $command = $pos_args[0] ?? 'help';
+array_shift($pos_args);
 
 $logger->info("command $command");
 
 if ('help' == $command) {
-    $runner->usage(false, EresseaRunner::STATUS_NORMAL, $pos_args[1] ?? NULL);
+    $runner->usage(false, EresseaRunner::STATUS_NORMAL, $pos_args[0] ?? NULL);
 } elseif ('install' == $command) {
     $runner->cmd_install($pos_args);
 } elseif ('update' == $command) {
@@ -756,10 +895,16 @@ if ('help' == $command) {
         $runner->cmd_info($configfile, $argv, $pos_args);
     } elseif ('game' == $command) {
         $runner->cmd_game($pos_args);
+    } elseif ('eressea' == $command) {
+        $runner->cmd_eressea($pos_args);
     } elseif ('seed' == $command) {
         $runner->cmd_seed($pos_args);
     } elseif ('gmtool' == $command) {
         $runner->cmd_editor($pos_args);
+    } elseif ('reports' == $command) {
+        $runner->cmd_reports($pos_args);
+    } elseif ('send' == $command) {
+        $runner->cmd_send($pos_args);
     } else {
         $msg = "unknown command '$command'";
         if ($verbosity > 0)

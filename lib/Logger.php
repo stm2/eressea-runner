@@ -8,7 +8,7 @@ class Logger {
 	const WARNING = 2;
 	const ERROR = 1;
 
-	public static int $log_level;
+	public static int $log_level = Logger::INFO;
 
 	function __construct() {
 		Analog::handler(Analog\Handler\Stderr::init ());
