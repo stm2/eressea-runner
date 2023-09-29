@@ -74,6 +74,8 @@ COMMANDS
         install the server
     upgrade [<branch>]
         recompile and install from source
+    install_mail
+        setup e-mail configuration
     $help_game
         start a new game
     $help_eressea
@@ -307,14 +309,21 @@ EOL;
         $this->verbosity = $value;
     }
 
-    private function confirm($prompt) {
+    private function confirm($prompt, $default = 'Y') {
+        if ($default == 'Y') $hints = 'Y/n'; else $hints = 'y/N';
         if ($this->confirm_all) {
             if ($this->verbosity > 0)
-                echo "$prompt [Y]\n";
+                echo "$prompt [$hints]\n";
             return true;
         }
-        $continue = readline("$prompt [Y/n] \n");
-        return $continue === false || $continue ==='' || strcasecmp($continue, 'y') === 0;
+        $lines = explode("\n", $prompt);
+        for($l = 0; $l < count($lines) - 1; ++$l) {
+            echo $lines[$l] . "\n";
+        }
+        $continue = readline($lines[count($lines)-1] . " [$hints] \n");
+        if ($continue === false || $continue ==='')
+            $continue = $default;
+        return strcasecmp($continue, 'y') === 0;
     }
 
     private function input($prompt, &$value) {
@@ -323,7 +332,13 @@ EOL;
                 echo "$prompt [$value]\n";
             return true;
         }
-        $input = readline("$prompt [$value] ");
+
+        $lines = explode("\n", $prompt);
+        for($l = 0; $l < count($lines) - 1; ++$l) {
+            echo $lines[$l] . "\n";
+        }
+
+        $input = readline($lines[count($lines)-1] . " [$value] ");
         if (!empty($input))
             $value = $input;
         return $input !== false;
@@ -410,12 +425,15 @@ EOL;
 
         $this->exec("s/install -f");
 
-
         $this->config['runner']['serverdir'] = $installdir;
         $this->config['runner']['gamedir'] = $gamedir;
 
         $this->chdir($basedir);
         $this->save_config();
+
+        if ($this->confirm("Would you also like to setup e-mail?")) {
+            $this->cmd_install_mail();
+        }
     }
 
     const INI_TEMPLATE = <<<EOF
@@ -647,13 +665,123 @@ EOF;
     }
 
     function check_email() {
-        if (isset($config['runner']['muttr']))
+        if (isset($config['runner']['muttrc']))
             return true;
 
-        $this->abort("E-mail is not configured. Please set it up with the command mail_install.", static::STATUS_EXECUTION);
+        $this->abort("E-mail is not configured. Please set it up with the command install_mail.", static::STATUS_EXECUTION);
     }
 
-     function cmd_send(array $pos_args) {
+    function cmd_install_mail(array $pos_args = null) {
+        $home=getenv("HOME");
+        $xdgc=getenv("XDG_CONFIG_HOME");
+        $muttrc = "$home/.muttrc";
+        if (!file_exists($muttrc)) {
+            $muttrc = "$home/.mutt/muttrc";
+            if (!file_exists($muttrc)) {
+                $muttrc = "$xdgc/mutt/muttrc";
+            }
+            if (!file_exists($muttrc)) {
+                $muttrc = "";
+            }
+        }
+        if (!empty($muttrc)){
+            if ($this->confirm("Found a mutt configuration file $muttrc for this user. Do you want to use this?", 'N')) {
+                $this->config['runner']['muttrc'] = $muttrc;
+                $this->save_config();
+                return;
+            }
+
+        }
+        $muttrc = $this->get_base_directory() . "/etc/muttrc";
+        if (file_exists($muttrc)) {
+            if ($this->confirm("Found a mutt configuration file $muttrc. Do you want to use this?")){
+                $this->config['runner']['muttrc'] = $muttrc;
+                $this->save_config();
+                return;
+            }
+        }
+
+        do {
+            if (!$this->input("I will try to create a new mutt configuration file for you.\n".
+                "These are the settings for *sending* e-mails.\n".
+                "What is your server's name used in the sender's address?", $name))
+                exit(0);
+            if (!$this->input("What is your sender's email address?", $email))
+                exit(0);
+            $smtp_user = $email;
+            if (!$this->input("What is your SMTP user name?", $smtp_user))
+                exit(0);
+            if (!$this->input("What is your SMTP user passphrase?", $smtp_pw))
+                exit(0);
+            if (!$this->input("What is your provider's SMTP server?", $smtp_server))
+                exit(0);
+            $smtp_port = 465;
+            if (!$this->input("What is your SMTP server port (often 465 or 587)?", $smtp_port))
+                exit(0);
+
+        } while (!$this->confirm("Here's what you have entered so far:\n" .
+            "email $email\nuser $smtp_user\npassword ***\nserver $smtp_server\nport $smtp_port\n".
+            "Is this correct?"));
+
+
+        $protocol = 'IMAP';
+        $protocol_user = $smtp_user;
+        $protocol_pw = "";
+        $protocol_server = $smtp_server;
+        $protocol_port = 993;
+
+        do {
+            do {
+                if (!$this->input("These are the settings for *receiving* e-mails.\n".
+                    "Would you like to use the IMAP or the POP protocol?", $protocol))
+                    exit(0);
+                if ($protocol != "IMAP" && $protocol != "POP")
+                    echo "Unknown protocol. Please enter IMAP or POP\n";
+            } while($protocol != "IMAP" && $protocol != "POP");
+            if (!$this->input("What is your $protocol user name?", $protocol_user))
+                exit(0);
+            if (!$this->input("What is your $protocol user passphrase (leave blank if same as above)?", $protocol_pw))
+                exit(0);
+            if ($protocol_pw == '') $same = "same as SMTP"; else $same = "***";
+            if (!$this->input("What is your provider's $protocol server?", $protocol_server))
+                exit(0);
+            if (!$this->input("What is your $protocol server port (often 993)?", $protocol_port))
+                exit(0);
+        } while (!$this->confirm("Here's what you have entered so far:\n" .
+            "user $protocol_user\npassword $same\nserver $protocol_server\nport $protocol_port\n".
+            "Is this correct?"));
+
+        if ($protocol_pw == '') $protocol_pw = $smtp_pw;
+
+        $templatefile = $this->get_base_directory() . "/etc/muttrc.$protocol.template";
+        if (!file_exists($templatefile))
+            $this->abort("template file $templatefile not found", static::STATUS_EXECUTION);
+        $template = file_get_contents($templatefile);
+        if ($template == false)
+            $this->abort("template file not found", static::STATUS_EXECUTION);
+
+        $from = "$name <$email>";
+
+        $mailfolder=$this->get_base_directory() . "/Mail";
+        $okey = file_put_contents($muttrc,
+                    sprintf($template,
+                        escapeshellarg($from),
+                        escapeshellarg($smtp_user),
+                        escapeshellarg($smtp_pw),
+                        escapeshellarg($smtp_server),
+                        intval($smtp_port),
+                        escapeshellarg($protocol_user),
+                        escapeshellarg($protocol_pw),
+                        escapeshellarg($protocol_server),
+                        intval($protocol_port),
+                        escapeshellarg($mailfolder)));
+        if ($okey === false)
+            $this->abort("could not write to $muttrc", static::STATUS_EXECUTION);
+
+        echo "Wrote profile to $muttrc. You may edit this file manually to make further adjustments.\n";
+    }
+
+    function cmd_send(array $pos_args) {
         if (count($pos_args) > 0)
             $this->abort("additional arguments not implemented", static::STATUS_PARAMETER);
 
@@ -893,6 +1021,8 @@ if ('help' == $command) {
         exit(EresseaRunner::STATUS_PARAMETER);
     } elseif ('info' == $command) {
         $runner->cmd_info($configfile, $argv, $pos_args);
+    } elseif ('install_mail' == $command) {
+        $runner->cmd_install_mail($pos_args);
     } elseif ('game' == $command) {
         $runner->cmd_game($pos_args);
     } elseif ('eressea' == $command) {

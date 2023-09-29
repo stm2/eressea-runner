@@ -1,0 +1,48 @@
+# set to your game server name (optional)
+set from = %s
+set use_from = yes
+# your user name for sending mails (may or may not be your email address)
+set my_smtp_user=%s
+# your passphrase
+set smtp_pass=%s
+# your provider's SMTP server
+set my_smtp_server=%s
+# server's SMTP port, sometimes 587
+set my_smtp_port=%d
+
+# your user name for getting mails; you can change it to $my_smtp_user (without quotes)
+# if it is the same as above
+set pop_user=%s
+# your passphrase
+set pop_pass=%s
+# your pop server
+set pop_host=%s
+set pop_port=%d
+# full server address
+set pop_host="pops://$my_pop_host:$my_pop_port"
+
+# server pop address including port
+set folder=%s
+set spoolfile="pops://$my_pop_host/"
+#set spoolfile=+INBOX
+
+unset pop_delete
+
+set record=+Gesendet
+#unset record
+
+set smtp_url=smtps://$my_smtp_user:$smtp_pass@$my_smtp_server:$smtp_port
+
+set postponed="Drafts"
+# activate TLS if available on the server
+set ssl_starttls=yes
+# always use SSL when connecting to a server
+set ssl_force_tls=yes
+# Reduce polling frequency to a sane level
+set mail_check=60
+# And poll the current mailbox more often (not needed with IDLE in post 1.5.11)
+set timeout=10
+# keep a cache of headers for faster loading (1.5.9+?)
+#set header_cache=~/.hcache
+# Display download progress every 5K
+#set net_inc=5
