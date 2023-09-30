@@ -1,0 +1,19 @@
+<?php
+$ERrunner = array (
+  // absolute path to working directory; all relative paths are relative to base
+  // default: the parent of the directory containing the config file or the directory
+  // containing the script
+  'basedir' => '/absolute/path',
+  // path to directory containing all the games
+  'gamedir' => '.',
+  // path to main server installation directory
+  'serverdir' => 'server',
+  // path to a log file
+  'logfile' => 'log/runner.log',
+  // mutt configuration file (if used for sending mails)
+  'muttrc' => '/home/steffen/.muttrc',
+);
+
+// game specific configurations
+$ERgame = array (
+);

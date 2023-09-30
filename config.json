@@ -1,8 +1,0 @@
-{
-    "game": [ ],
-    "runner": {
-        "gamedir": ".",
-        "logfile": "log\/runner.log",
-        "serverdir": "server",
-    }
-}

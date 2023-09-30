@@ -139,7 +139,8 @@ USAGE
     $name [-f <configfile>] [-y] [-l <log level>] [-v <verbosity>]
         [-g <game-id>] [-t <turn>] <command> [<args> ...]
 
-    <configfile> contains all the game settings. Defaults to config.json in the script's directoy.
+    <configfile> contains all the game settings.
+        Defaults: /real-path-to-script/../conf/config.php
 
     -l <log level>
     -v <verbosity>
@@ -206,30 +207,27 @@ EOL, "    ");
                 echo <<<EOL
 THE CONFIG FILE
 
-    The config file is in JSON format:
+    The config file is a PHP file:
 
-    {
-      "runner": {
-        // absolute path to working directory
-        // (default: the directory containing the config file or the directory containing the script
-        // all relative paths are relative to base
-        "base": "/absolute/path",
-
-        // path to a log file (default: logs/runner.log)
-        "logfile": "path/to/file",
-
-        // path to server installation directory
-        "serverdir": "path/to/dir",
-
-        // path to games directory
-        "gamedir": "path/to/dir",
-      },
-
-      "game": [
-        { "id": "id1" },
-        { "id": "id2" }
-      ]
-    }
+<?php
+    \$ERrunner = array (
+        // absolute path to working directory; all relative paths are relative to base
+        // default: the parent of the directory containing the config file or the directory
+        // containing the script
+        'basedir' => '/absolute/path',
+        // path to directory containing all the games
+        'gamedir' => '.',
+        // path to main server installation directory
+        'serverdir' => 'server',
+        // path to a log file
+        'logfile' => 'log/runner.log',
+        // mutt configuration file (if used for sending mails)
+        'muttrc' => '/home/steffen/.muttrc',
+    );
+    // game specific configurations
+    \$ERgame = array (
+    );
+?>
 
 EOL;
 
@@ -300,13 +298,30 @@ EOL;
         $this->info("games: '" . ($this->config['runner']['gamedir'] ?? "-?-") . "'");
         $this->info("muttrc: '" . ($this->config['runner']['muttrc'] ?? "-?-") . "'");
 
-        $out = [];
-        $this->call_eressea('', [ '--version' ], $out);
-        $text = "eressea: ";
-        foreach($out as $line)
-            $text .= $line;
+        if (isset($this->config['runner']['basedir']) &&
+            isset($this->config['runner']['gamedir']) &&
+            chdir($this->get_game_directory())) {
+                $this->info("games:");
+                $dirs = glob("game-*");
+                foreach($dirs as $dir) {
+                    if (is_dir($dir) && file_exists($dir . '/eressea.ini')) {
+                        $this->info("    $dir");
+                    }
+                }
+        }
 
-        $this->info("$text\n");
+        if (isset($this->config['runner']['basedir']) &&
+            isset($this->config['runner']['serverdir'])) {
+            $serverdir = $this->get_server_directory();
+
+            $out = [];
+            $this->call_eressea('', [ '--version' ], $out);
+            $text = "eressea: ";
+            foreach($out as $line)
+                $text .= $line;
+
+            $this->info("$text\n");
+        }
 
     }
 
@@ -458,7 +473,7 @@ EOL;
             exit(StatusCode::STATUS_NORMAL);
 
         if (!$update && file_exists($installdir)) {
-            $msg = "Installation directory exits, please use the update command";
+            $msg = "Installation directory exists, please use the update command";
             abort($msg, StatusCode::STATUS_NORMAL);
         }
 
@@ -545,9 +560,9 @@ EOF;
             $this->abort("Invalid ruleset '$rules'", StatusCode::STATUS_PARAMETER);
 
         $serverdir = $this->get_server_directory();
-        $config =  "$serverdir/conf/$rules/config.json";
-        if (!file_exists($config))
-            $this->abort("Cannot find config $config", StatusCode::STATUS_PARAMETER);
+        $configfile =  "$serverdir/conf/$rules/config.json";
+        if (!file_exists($configfile))
+            $this->abort("Cannot find config $configfile", StatusCode::STATUS_PARAMETER);
 
 
         if (!$this->confirm("Create game with rules $rules in '$gamesub'?"))
@@ -925,7 +940,7 @@ EOF;
         $this->sd($config, $path, 0, $default);
     }
 
-    function parse_json(string $configfile) : array|null {
+    private function parse_json(string $configfile) : array|null {
         $config = null;
         if (file_exists($configfile) && is_readable($configfile)) {
             $raw = file_get_contents($configfile);
@@ -942,14 +957,47 @@ EOF;
         return $config;
     }
 
+    private const CONFIG_VARIABLES = ['runner', 'game'];
+
+    function parse_php(string $configfile) : array|null {
+        if (!is_readable($configfile))
+            return null;
+        include($configfile);
+        $config = [];
+        foreach(static::CONFIG_VARIABLES as $section) {
+            $name = "ER$section";
+            $config[$section] = $$name;
+        }
+        return $config;
+    }
+
+    function php_encode(array $content) {
+        $text = "<?php\n";
+        foreach(static::CONFIG_VARIABLES as $section) {
+            $text .= "\$ER$section = " . var_export($content[$section], true) . ";\n";
+        }
+        return $text;
+    }
+
+    function save_php(string $configfile, array $content) : bool {
+        if (empty($configfile) || (file_exists($configfile) && !is_writable($configfile))) {
+            $this->error("Cannot write to config file '$configfile");
+            return false;
+        } else {
+            file_put_contents($configfile, $this->php_encode($content), LOCK_EX);
+            $this->debug("Wrote config file $configfile");
+            return true;
+        }
+    }
+
     function parse_config(string $configfile) : array {
-        $config = $this->parse_json($configfile);
+        $config = $this->parse_php($configfile);
 
         if (empty($config))
             $config = [];
 
         $this->set_default($config, ['configfile'], $configfile);
-        $this->set_default($config, ['runner', 'basedir'], dirname($configfile));
+        $this->set_default($config, ['runner', 'basedir'], dirname(dirname($configfile)));
         $config['runner']['basedir'] = realpath($config['runner']['basedir']);
         $this->set_default($config, ['runner', 'logfile'], 'log/runner.log');
         $this->set_default($config, ['runner', 'serverdir'], 'server');
@@ -975,7 +1023,8 @@ EOF;
         $this->info("save $configfile\n");
         $copy = $this->config;
         unset($copy['configfile']);
-        $this->save_json($configfile, $copy);
+        $this->save_php($configfile, $copy);
+        // $this->save_json($configfile, $copy);
     }
 
     function get_base_directory() : mixed {
@@ -1024,14 +1073,14 @@ $runner = new EresseaRunner;
 
 $usage = 0;
 $optind = 1;
-$log_level = Logger::WARNING;
+$log_level = Logger::INFO;
 $verbosity = 1;
 $scriptname = $_SERVER['PHP_SELF'];
 
 if (realpath($scriptname) !== false)
-    $configfile = dirname(dirname(realpath($scriptname))) . "/config.json";
+    $configfile = dirname(dirname(realpath($scriptname))) . "/conf/config.php";
 else
-    $configfile = realpath(".") . "/config.json";
+    $configfile = realpath(".") . "/conf/config.php";
 while (isset($argv[$optind])) {
     $arg = $argv[$optind];
     if (in_array($arg, ['-h', '--help'])) {
