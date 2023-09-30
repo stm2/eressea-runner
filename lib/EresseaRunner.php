@@ -139,7 +139,7 @@ USAGE
     $name [-f <configfile>] [-y] [-l <log level>] [-v <verbosity>]
         [-g <game-id>] [-t <turn>] <command> [<args> ...]
 
-    <configfile> contains all the game settings. Defaults to config.ini in the script's directoy.
+    <configfile> contains all the game settings. Defaults to config.json in the script's directoy.
 
     -l <log level>
     -v <verbosity>
@@ -288,21 +288,25 @@ EOL;
     }
 
     function cmd_info(string $configfile, array $argv, array $pos_args) : void {
-        $this->info("\nworking directory: '" . getcwd() . "'\n");
-        $this->info("config: '$configfile'\n");
+        $this->info("\nworking directory: '" . getcwd() . "'");
+        $this->info("config: '$configfile'");
         foreach ($pos_args as $key => $value) {
             $this->log("arg[$key]: '$value'\n");
         }
 
-        if (empty($pos_args[0])) {
-            $this->error("missing argument");
-            // $this->usage($argv[0], 1);
-        }
+        $this->info("base dir: '" . ($this->config['runner']['basedir'] ?? "-?-") . "'");
+        $this->info("log file: '" . ($this->config['runner']['logfile'] ?? "-?-") ."'");
+        $this->info("server: '" . ($this->config['runner']['serverdir'] ?? "-?-") . "'");
+        $this->info("games: '" . ($this->config['runner']['gamedir'] ?? "-?-") . "'");
+        $this->info("muttrc: '" . ($this->config['runner']['muttrc'] ?? "-?-") . "'");
 
-        $this->info("\nbase dir: '" . $this->config['runner']['basedir'] . "'\n");
-        $this->info("log file: '" . $this->config['runner']['logfile'] ."'\n");
-        $this->info("server: '" . $this->config['runner']['serverdir'] . "'\n");
-        $this->info("games: '" . $this->config['runner']['gamedir'] . "'\n\n");
+        $out = [];
+        $this->call_eressea('', [ '--version' ], $out);
+        $text = "eressea: ";
+        foreach($out as $line)
+            $text .= $line;
+
+        $this->info("$text\n");
 
     }
 
@@ -414,7 +418,7 @@ EOL;
 
         exec($cmd, $out, $result);
 
-        $this->info("done");
+        $this->log("done");
         foreach($out as $line)
             $this->debug($line);
 
@@ -464,9 +468,9 @@ EOL;
 
         $this->exec("git fetch");
 
-        $this->exec("git checkout $branch", "Failed to update source. Do you have local changes?");
+        $this->exec("git checkout '$branch'", "Failed to update source. Do you have local changes?");
 
-        $this->exec("git pull --rebase origin $branch", "Failed to update source. Do you have local changes?");
+        $this->exec("git pull --rebase origin '$branch'", "Failed to update source. Do you have local changes?");
 
         $this->exec("git submodule update --init --recursive");
 
@@ -659,7 +663,7 @@ EOF;
         }
     }
 
-    function call_eressea(string $script, array $args = []) : bool {
+    function call_eressea(string $script, array $args = [], array &$out = null) : bool {
         $this->set_lua_path();
 
         if (empty($script)) {
@@ -669,13 +673,23 @@ EOF;
         } else {
             $scriptname = $this->get_base_directory() . "/scripts/$script";
         }
-        $argstring = "";
+        $scriptname = escapeshellarg($scriptname);
 
+        $argstring = "";
         foreach($args as $arg) {
             $argstring .= " " . escapeshellarg($arg);
         }
-        echo "./eressea $argstring $scriptname\n";
-        return passthru("./eressea $argstring $scriptname") === null;
+
+        $eressea = escapeshellarg($this->get_server_directory() . "/bin/eressea");
+
+        $this->log("$eressea $argstring $scriptname\n");
+        if ($out !== null){
+            $result = false;
+            $out = $this->exec("$eressea $argstring $scriptname", null, true, $result);
+            return $result;
+        } else {
+            return passthru("$eressea $argstring $scriptname") === null;
+        }
     }
 
     function call_script(string $script, array $args = []) : bool {
@@ -689,6 +703,7 @@ EOF;
         } else {
             $scriptname = $this->get_server_directory() . "/bin/$script";
         }
+        $scriptname = escapeshellarg($scriptname);
 
         if (!is_executable($scriptname)) {
             $this->abort("$script not executable", StatusCode::STATUS_EXECUTION);
@@ -701,7 +716,7 @@ EOF;
         foreach($args as $arg) {
             $argstring .= " " . escapeshellarg($arg);
         }
-        echo "$scriptname $argstring\n";
+        $this->log("$scriptname $argstring\n");
         return passthru("$scriptname $argstring") ===   null;
     }
 
