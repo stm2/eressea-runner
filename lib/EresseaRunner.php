@@ -24,7 +24,7 @@ class EresseaRunner {
 
     private int $verbosity = 1;
     public bool $confirm_all = false;
-    public int $game_id = -1;
+    public ?string $game_id = null;
     public int $turn = -1;
 
 
@@ -332,7 +332,7 @@ EOL;
         $this->game_id = $id;
     }
 
-    public function get_current_game() : string {
+    public function get_current_game() : ?string {
         $gamedir = $this->get_game_directory();
         $currentdir = realpath(".");
         if (dirname($currentdir) != $gamedir) {
@@ -343,14 +343,14 @@ EOL;
             $id = substr($currentdir, strlen("$gamedir/game-"));
             if (!preg_match(static::GAME_ID_PATTERN, $id)) {
                 $this->debug("Invalid game id $id");
-                return -1;
+                return null;
             }
             $this->debug("Found game dir $id");
             return $id;
         } else {
             $this->debug("Apparently not in $gamedir/game-id");
         }
-        return -1;
+        return null;
     }
 
     public function set_turn(int $turn) : void {
@@ -397,7 +397,7 @@ EOL;
         return strcasecmp($continue, 'y') === 0;
     }
 
-    private function input(string $prompt, string &$value) : bool {
+    private function input(string $prompt, ?string &$value) : bool {
         if ($this->confirm_all) {
             if ($this->verbosity > 0)
                 echo "$prompt [$value]\n";
@@ -417,7 +417,7 @@ EOL;
 
     function chdir(string $dirname, bool $abort = true) : bool {
         if (!chdir($dirname)) {
-            $ms = "Could not enter directory $dirname";
+            $msg = "Could not enter directory $dirname";
             if ($abort)
                 $this->abort($msg, StatusCode::STATUS_EXECUTION);
             else
@@ -450,31 +450,37 @@ EOL;
 
         // TODO check dependencies git cmake ...?
 
-        $branch = $pos_args[0] ?? 'master';
+        // TODO $branch = $this->config['runner']['srcbranch'];
+        $branch = 'master';
+        $out = $this->exec("git -C eressea-source branch --show-current");
+        if (!empty($out))
+            $branch = $out[0];
+        $branch = $pos_args[0] ?? $branch;
+
         if (!$this->input("Install branch: ", $branch))
             exit(StatusCode::STATUS_NORMAL);
         if ($branch !== 'master')
             if (!$this->confirm("Installing versions other than the master branch is unsafe. Continue?"))
                 exit(StatusCode::STATUS_NORMAL);
 
-        $installdir = $pos_args[1] ?? $basedir . '/server';
+        $installdir = $this->config['runner']['serverdir'];
         // if (!$this->input("Install server in ", $installdir))
         //     exit(StatusCode::STATUS_NORMAL);
-        $gamedir = $pos_args[2] ?? $basedir;
+        $gamedir = $pos_args[2] ?? $this->config['runner']['gamedir'];
         // if (!$this->input("Install games in ", $gamedir))
         //     exit(StatusCode::STATUS_NORMAL);
 
         if (!str_starts_with($installdir, "/"))
-            $installdir = $basedir . "/" . $installdir;
+            $abs_installdir = $basedir . "/" . $installdir;
         if (!str_starts_with($gamedir, "/"))
-            $gamedir = $basedir . "/" . $gamedir;
+            $abs_gamedir = $basedir . "/" . $gamedir;
 
-        if (!$this->confirm("Install branch $branch of server in $installdir, games in $gamedir?"))
+        if (!$this->confirm("Install branch $branch of server in $abs_installdir, games in $abs_gamedir?"))
             exit(StatusCode::STATUS_NORMAL);
 
-        if (!$update && file_exists($installdir)) {
+        if (!$update && file_exists($abs_installdir)) {
             $msg = "Installation directory exists, please use the update command";
-            abort($msg, StatusCode::STATUS_NORMAL);
+            $this->abort($msg, StatusCode::STATUS_NORMAL);
         }
 
         // does not work!
@@ -497,7 +503,7 @@ EOL;
 
         $this->exec("s/install -f");
 
-        $this->config['runner']['serverdir'] = $installdir;
+        // $this->config['runner']['serverdir'] = $installdir;
         $this->config['runner']['gamedir'] = $gamedir;
 
         $this->chdir($basedir);
@@ -511,7 +517,7 @@ EOL;
     const INI_TEMPLATE = <<<EOF
 [game]
 locales = de,en
-id      = %d
+id      = %s
 start   = %d
 
 [lua]
@@ -535,7 +541,7 @@ EOF;
 
         $game_id = $this->game_id;
         $gamesub = "game-$game_id";
-        if ($game_id == -1) {
+        if ($game_id === null) {
             for($game_id = 0; ; ++$game_id) {
                 $gamesub = "game-$game_id";
                 if (!file_exists("$gamedir/$gamesub")) {
@@ -543,6 +549,8 @@ EOF;
                 }
             }
         }
+        if (preg_match(static::GAME_ID_PATTERN, $game_id) !== 1)
+            $this->abort("Invalid game ID '$game_id'", StatusCode::STATUS_EXECUTION);
 
         if (file_exists("$gamedir/$gamesub")) {
             $this->abort("Game dir " . realpath("$gamedir/$gamesub") . " already exists", StatusCode::STATUS_EXECUTION);
@@ -590,11 +598,11 @@ EOF;
     }
 
     function check_game() : string {
-        if ($this->game_id != -1) {
+        if ($this->game_id !== null) {
             $gameid = $this->game_id;
         } else {
             $gameid = $this->get_current_game();
-            if ($gameid === -1) {
+            if ($gameid === null) {
                 $this->abort("Game id not set and not in game directory", StatusCode::STATUS_PARAMETER);
             }
             $this->game_id = $gameid;
@@ -662,8 +670,8 @@ EOF;
 
     function set_lua_path() :void {
         if ($this->lua_path == null) {
-            // TODO eval ($luarocks path) ??
-
+            $lua_path=getenv("LUA_PATH");
+            $this->debug("old lua path $lua_path");
             $paths=$this->exec("luarocks path");
             foreach($paths as $line) {
                 $line = substr($line, 7);
@@ -671,10 +679,13 @@ EOF;
             }
 
             $lua_path=getenv("LUA_PATH");
+            $this->debug("luarocks lua path $lua_path");
             if ($lua_path === false) $lua_path = '';
             putenv("LUA_PATH=" . $this->get_base_directory() . "/scripts/?.lua;./?.lua;$lua_path");
             exec('echo $LUA_PATH', $out);
-            $this->lua_path = $out[0];
+            $lua_path = $out[0];
+            $this->debug("new lua path $lua_path");
+            $this->lua_path = $lua_path;
         }
     }
 
@@ -718,11 +729,11 @@ EOF;
         } else {
             $scriptname = $this->get_server_directory() . "/bin/$script";
         }
-        $scriptname = escapeshellarg($scriptname);
 
         if (!is_executable($scriptname)) {
             $this->abort("$script not executable", StatusCode::STATUS_EXECUTION);
         }
+        $scriptname = escapeshellarg($scriptname);
 
         putenv('ERESSEA=' . $this->get_base_directory());
 
@@ -735,7 +746,7 @@ EOF;
         return passthru("$scriptname $argstring") ===   null;
     }
 
-    function cmd_editor(array $pos_args) : void {
+    function cmd_gmtool(array $pos_args) : void {
         $this->goto_game();
 
         $this->call_eressea("editor.lua");
@@ -749,19 +760,22 @@ EOF;
 
         $this->info("writing new files");
         if (isset($pos_args[0]) && $pos_args[0] == '-r')
-            $this->call_eressea("write_files_only.lua");
-        else
             $this->call_eressea("write_files_pw.lua");
+        else {
+            // run once to create reports.txt
+            $this->call_eressea("write_files_pw.lua");
+            $this->call_eressea("write_files_only.lua");
+        }
     }
 
     function check_email() : bool {
-        if (isset($config['runner']['muttrc']))
+        if (isset($this->config['runner']['muttrc']))
             return true;
 
         $this->abort("E-mail is not configured. Please set it up with the command install_mail.", StatusCode::STATUS_EXECUTION);
     }
 
-    function cmd_install_mail(array $pos_args = null) : void {
+    function cmd_install_mail(?array $pos_args = null) : void {
         $home=getenv("HOME");
         $xdgc=getenv("XDG_CONFIG_HOME");
         $muttrc = "$home/.muttrc";
@@ -810,7 +824,7 @@ EOF;
                 exit(0);
 
         } while (!$this->confirm("Here's what you have entered so far:\n" .
-            "email: $email\nuser: $smtp_user\npassword: ***\nserver: $smtp_server\nport: $smtp_port\n".
+            "name: $name\nemail: $email\nuser: $smtp_user\npassword: ***\nserver: $smtp_server\nport: $smtp_port\n".
             "Is this correct?"));
 
 
@@ -889,7 +903,7 @@ EOF;
         $this->goto_game();
         $this->chdir("reports");
         if (!file_exists("reports.txt"))
-            $this->abort("missing reports.txt for game " . $this->$game_id);
+            $this->abort("missing reports.txt for game " . $this->game_id, StatusCode::STATUS_EXECUTION);
 
         $this->check_email();
 
@@ -897,6 +911,9 @@ EOF;
 
         if (empty(glob("[a-kLm-z0-9]*.sh")))
             $this->abort("no send scripts in " . getcwd(), StatusCode::STATUS_EXECUTION);
+
+        $oldhome=getenv("HOME");
+        putenv("HOME=" . dirname($this->config['runner']['muttrc']));
 
         $this->call_script("sendreports.sh", [$this->game_id]);
 
@@ -974,7 +991,10 @@ EOF;
     function php_encode(array $content) {
         $text = "<?php\n";
         foreach(static::CONFIG_VARIABLES as $section) {
-            $text .= "\$ER$section = " . var_export($content[$section], true) . ";\n";
+            if (isset($content[$section]))
+                $text .= "\$ER$section = " . var_export($content[$section], true) . ";\n";
+            else
+                $text .= "\$ER$section = [ ];\n";
         }
         return $text;
     }

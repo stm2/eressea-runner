@@ -1,6 +1,8 @@
 ## Requirements
 
-    * git, php, json-lua, cmake, gcc ...
+    * git, php, , cmake, gcc ...
+
+    * apt-get install php-mbstring; luarocks install json-lua --local
 
 ````shell
 luarocks install lunajson
