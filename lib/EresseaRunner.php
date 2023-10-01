@@ -38,52 +38,69 @@ class EresseaRunner {
         'help' => [
             'std_runner' => true,
             'commandline' => "help [<command>]",
-            'short' =>  'display help information; try help <command> or help config for information about a command or the configuration file'],
+            'short' =>  'display help information; try help <command> or help config for information about a command or the configuration file'
+        ],
         'install' => [
             'commandline' => 'install [<branch>] [<server directory>] [<games directory>]',
-            'short' => 'install the server' ],
+            'short' => 'install the server'
+        ],
         'game' => [
             'std_runner' => true,
             'commandline' => 'game <rules>',
-            'short' => 'start a new game'],
+            'short' => 'start a new game'
+        ],
         'upgrade' => [
             'commandline' => 'upgrade <branch>',
-            'short' => 'recompile and install from source'],
+            'short' => 'recompile and install from source'
+        ],
         'install_mail' => [
             'std_runner' => true,
-            'short' => 'setup e-mail configuration' ],
+            'short' => 'setup e-mail configuration'
+        ],
         'eressea' => [
             'std_runner' => true,
-            'commandline' => "eressea [args ...]",
-            'short' => 'call the eressea server'],
+            'commandline' => "eressea [args]...",
+            'short' => 'call the eressea server'
+        ],
         'gmtool' => [
             'std_runner' => true,
-            'short' => 'open the game editor' ],
+            'short' => 'open the game editor'
+        ],
         'seed' => [
             'std_runner' => true,
             'commandline' => 'seed [-r] [<algorithm>]',
-            'short' => 'seed new players' ],
+            'short' => 'seed new players'
+        ],
         'reports' => [
             'std_runner' => true,
             'commandline' => 'reports [-p]',
-            'short' => 'write reports for all factions' ],
+            'short' => 'write reports for all factions'
+        ],
         'send' => [
             'std_runner' => true,
-            'commandline' => 'send [<faction id> ...]',
-            'short' => 'send reports for all or some factions' ],
+            'commandline' => 'send [ [<faction id> [<e-mail>] ]...',
+            'short' => 'send reports for all or some factions'
+        ],
         'fetch' => [
-            'short' => 'fetch orders from mail server' ],
+            'std_runner' => true,
+            'short' => 'fetch orders from mail server'
+        ],
         'create_orders' => [
-            'short' => 'process all orders in queue'],
+            'short' => 'process all orders in queue'
+        ],
         'run' => [
-            'short' => 'run a turn' ],
+            'short' => 'run a turn'
+        ],
         'run_all' => [
-            'short' => 'do a complete cycle: fetch mail, create-orders, run, send' ],
+            'short' => 'do a complete cycle: fetch mail, create-orders, run, send'
+        ],
         'announce' => [
-            'commandline' => 'announce subject textfile [attachement ...]',
-            'short' => 'send a message to all players' ],
+            'commandline' => 'announce subject textfile [attachement]...',
+            'short' => 'send a message to all players'
+        ],
         'backup' => [
-            'short' => 'backup relevant data for this turn' ]
+            'short' => 'backup relevant data for this turn'
+        ]
     ];
 
     function cmd(string $command, array $pos_args) {
@@ -137,7 +154,7 @@ class EresseaRunner {
             echo <<<EOL
 USAGE
     $name [-f <configfile>] [-y] [-l <log level>] [-v <verbosity>]
-        [-g <game-id>] [-t <turn>] <command> [<args> ...]
+        [-g <game-id>] [-t <turn>] <command> [<args>]...
 
     <configfile> contains all the game settings.
         Defaults: /real-path-to-script/../conf/config.php
@@ -301,13 +318,13 @@ EOL;
         if (isset($this->config['runner']['basedir']) &&
             isset($this->config['runner']['gamedir']) &&
             chdir($this->get_game_directory())) {
-                $this->info("games:");
-                $dirs = glob("game-*");
-                foreach($dirs as $dir) {
-                    if (is_dir($dir) && file_exists($dir . '/eressea.ini')) {
-                        $this->info("    $dir");
-                    }
+            $this->info("games:");
+            $dirs = glob("game-*");
+            foreach($dirs as $dir) {
+                if (is_dir($dir) && file_exists($dir . '/eressea.ini')) {
+                    $this->info("    $dir");
                 }
+            }
         }
 
         if (isset($this->config['runner']['basedir']) &&
@@ -897,9 +914,6 @@ EOF;
     }
 
     function cmd_send(array $pos_args) :void {
-        if (count($pos_args) > 0)
-            $this->abort("additional arguments not implemented", StatusCode::STATUS_PARAMETER);
-
         $this->goto_game();
         $this->chdir("reports");
         if (!file_exists("reports.txt"))
@@ -912,10 +926,32 @@ EOF;
         if (empty(glob("[a-kLm-z0-9]*.sh")))
             $this->abort("no send scripts in " . getcwd(), StatusCode::STATUS_EXECUTION);
 
+        // trick mutt into finding its configuration
         $oldhome=getenv("HOME");
         putenv("HOME=" . dirname($this->config['runner']['muttrc']));
 
-        $this->call_script("sendreports.sh", [$this->game_id]);
+        if (empty($pos_args))
+            $this->call_script("sendreports.sh", [$this->game_id]);
+        else {
+            for ($pos = 0; $pos < count($pos_args); ) {
+                $fid = $pos_args[$pos++];
+                $scriptname = "$fid.sh";
+                if (!is_executable($scriptname)) {
+                    chmod($scriptname, 0770);
+                }
+                if (is_executable($scriptname)) {
+                    $email = $pos_args[$pos] ?? null;
+                    if (strpos($email, "@") !== false) {
+                        ++$pos;
+                        $this->call_script(realpath($scriptname), [ $email ]);
+                    } else
+                        $this->call_script(realpath($scriptname), [ ]);
+                } else {
+                    $this->info("no send script for faction $fid");
+                }
+            }
+        }
+
 
   //         sent=0
   // assert_dir $GAMEDIR/reports
