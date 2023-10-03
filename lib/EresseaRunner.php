@@ -937,7 +937,8 @@ EOF;
 
         echo "Wrote profile to $muttrc and $fetchmailrc. You may edit this file manually to make further adjustments.\n";
 
-        mkdir($this->get_server_directory() . "/Mail");
+        mkdir($this->get_base_directory() . "/Mail");
+        // TODO crontab setup
     }
 
     function cmd_send(array $pos_args) :void {
@@ -997,20 +998,19 @@ EOF;
     }
 
     function cmd_fetch() {
+        $this->check_email();
+        $this->chdir($this->get_base_directory());
 
-//   fetchmailrc=$ETCDIR/fetchmailrc
-//   procmailrc=$ETCDIR/procmailrc
-//   assert_file $fetchmailrc
-//   assert_file $procmailrc
-//   myid=$(id -u)
-//   RUNNING=$(pgrep -u $myid fetchmail)
-//   if [ "RUNNING" = "" ]; then
-//     echo "fetchmail does not appear to be running. Calling it once."
-//     fetchmail -f $fetchmailrc
-//   else
-//     fetchmail
-//   fi
+        $fetchmailrc = "etc/fetchmailrc";
+        $procmailrc = "etc/procmailrc";
+        if (!file_exists($fetchmailrc))
+            $this->abort("Fetchmail configuration $fetchmailrc not found.", StatusCode::STATUS_EXECUTION);
+        if (!file_exists($procmailrc))
+            $this->abort("Procmail configuration $procmailrc not found.", StatusCode::STATUS_EXECUTION);
 
+        $out = $this->exec("bin/start_fetchmail.sh '$fetchmailrc'");
+        foreach($out as $line)
+            $this->info($line);
     }
 
     private function backup_file(string $filename) : string {
