@@ -86,9 +86,11 @@ class EresseaRunner {
             'short' => 'fetch orders from mail server'
         ],
         'create_orders' => [
+            'std_runner' => true,
             'short' => 'process all orders in queue'
         ],
         'run' => [
+            'std_runner' => true,
             'short' => 'run a turn'
         ],
         'run_all' => [
@@ -381,7 +383,7 @@ EOL;
         if ($this->turn >= 0)
             return $this->turn;
         $turnfile = $this->get_game_directory($this->game_id) . "/turn";
-        if (!file_exists($turnfile))
+        if ($this->game_id == null || !file_exists($turnfile))
             $this->abort("Turn not set and no turn file in " . basename(dirname($turnfile)), StatusCode::STATUS_EXECUTION);
 
         $turn = file_get_contents($turnfile);
@@ -687,18 +689,19 @@ EOF;
 
     function set_lua_path() :void {
         if ($this->lua_path == null) {
-            $lua_path=getenv("LUA_PATH");
+            $lua_path = getenv("LUA_PATH");
             $this->debug("old lua path $lua_path");
-            $paths=$this->exec("luarocks path");
+            $paths = $this->exec("luarocks path");
             foreach($paths as $line) {
                 $line = substr($line, 7);
                 putenv($line);
             }
 
-            $lua_path=getenv("LUA_PATH");
+            $lua_path = getenv("LUA_PATH");
             $this->debug("luarocks lua path $lua_path");
             if ($lua_path === false) $lua_path = '';
-            putenv("LUA_PATH=" . $this->get_base_directory() . "/scripts/?.lua;./?.lua;$lua_path");
+            putenv("LUA_PATH=" . $this->get_base_directory() . "/scripts/?.lua;./?.lua;" .
+                 $this->get_server_directory() . "/scripts/?.lua;$lua_path");
             exec('echo $LUA_PATH', $out);
             $lua_path = $out[0];
             $this->debug("new lua path $lua_path");
@@ -716,7 +719,8 @@ EOF;
         } else {
             $scriptname = $this->get_base_directory() . "/scripts/$script";
         }
-        $scriptname = escapeshellarg($scriptname);
+        if (!empty($scriptname))
+            $scriptname = escapeshellarg($scriptname);
 
         $argstring = "";
         foreach($args as $arg) {
@@ -1011,6 +1015,47 @@ EOF;
         $out = $this->exec("bin/start_fetchmail.sh '$fetchmailrc'");
         foreach($out as $line)
             $this->info($line);
+    }
+
+    function cmd_create_orders() {
+        $this->goto_game();
+        $turn = $this->get_current_turn();
+
+
+        if (!is_dir("orders.dir") || empty(glob("orders.dir/turn-*")))
+            $this->abort("no orders in orders.dir", StatusCode::STATUS_EXECUTION);
+
+        // TODO check NMRs
+        $this->call_script("create-orders", [ $this->game_id, $turn ]);
+
+        $this->info("order reception for turn $turn is closed, orders sent now will be for the next turn");
+
+        if (!is_dir("orders.dir.$turn"))
+            $this->error("orders.dir.$turn was not created");
+
+    }
+
+    function cmd_run() {
+        $this->goto_game();
+        $game = $this->game_id;
+        $turn = $this->get_current_turn();
+
+        if (!is_file("orders.$turn"))
+            $this->abort("no order file orders.$turn", StatusCode::STATUS_EXECUTION);
+
+        // TODO check NMRs
+        $out = [];
+        $this->call_eressea('./scripts/run-turn.lua', [ '-t', "$turn", '-l', '5' ], $out);
+        $text = "";
+        foreach($out as $line)
+            $text .= "$line\n";
+
+        $this->info("$text\n");
+
+        // $this->call_script("run-turn", [ $this->game_id, $turn ]);
+
+        if (!file_exists("log/eressea.log.$game.$turn"))
+            link("eressea.log", "../log/eressea.log.$game.$turn");
     }
 
     private function backup_file(string $filename) : string {
