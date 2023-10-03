@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+set -euo pipefail
 
 if ! command -v php &> /dev/null
 then
@@ -14,6 +14,6 @@ while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symli
   [[ $SOURCE != /* ]] && SOURCE=$BASE/$SOURCE # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
 done
 BASE=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
-PROG=$(basename ${BASH_SOURCE[0]})
+PROG=$(basename "${BASH_SOURCE[0]}")
 
-php $BASE/../lib/Json2Cr.php -c $PROG "$@"
+php "$BASE/../lib/Json2Cr.php" -c "$PROG" "$@"
