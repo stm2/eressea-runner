@@ -46,7 +46,7 @@ seeder:seed(newplayers)
 gmtool.editor()
 
 -- write_reports also changes the passwords of new factions
-write_reports()
+--write_reports()
 eressea.write_game("auto.dat")
 print("game saved as auto.dat")
 write_map("export.cr")
