@@ -1,0 +1,8 @@
+# insert your provider's pop3 server, user name and password
+
+set daemon 120
+
+poll %s protocol %s service %d with :
+     user %s password %s with:
+     ssl and sslproto "auto" and keep and:
+     mda "/usr/bin/procmail -m ERESSEA=%s %s/etc/procmailrc"

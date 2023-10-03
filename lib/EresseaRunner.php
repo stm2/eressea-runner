@@ -796,6 +796,9 @@ EOF;
         $home=getenv("HOME");
         $xdgc=getenv("XDG_CONFIG_HOME");
         $muttrc = "$home/.muttrc";
+        $basedir = $this->get_base_directory();
+        $fetchmailrc =  "$basedir/etc/fetchmailrc";
+
         if (!file_exists($muttrc)) {
             $muttrc = "$home/.mutt/muttrc";
             if (!file_exists($muttrc)) {
@@ -813,7 +816,7 @@ EOF;
             }
 
         }
-        $muttrc = $this->get_base_directory() . "/etc/.muttrc";
+        $muttrc = "$basedir/etc/.muttrc";
         if (file_exists($muttrc)) {
             if ($this->confirm("Found a mutt configuration file $muttrc. Do you want to use this?")){
                 $this->config['runner']['muttrc'] = $muttrc;
@@ -854,11 +857,11 @@ EOF;
         do {
             do {
                 if (!$this->input("These are the settings for *receiving* e-mails.\n".
-                    "Would you like to use the IMAP or the POP protocol?", $protocol))
+                    "Would you like to use the IMAP or the POP3 protocol?", $protocol))
                     exit(0);
-                if ($protocol != "IMAP" && $protocol != "POP")
-                    echo "Unknown protocol. Please enter IMAP or POP\n";
-            } while($protocol != "IMAP" && $protocol != "POP");
+                if ($protocol != "IMAP" && $protocol != "POP3")
+                    echo "Unknown protocol. Please enter IMAP or POP3\n";
+            } while($protocol != "IMAP" && $protocol != "POP3");
             if (!$this->input("What is your $protocol user name?", $protocol_user))
                 exit(0);
             if (!$this->input("What is your $protocol user passphrase (leave blank if same as above)?", $protocol_pw))
@@ -874,12 +877,12 @@ EOF;
 
         if ($protocol_pw == '') $protocol_pw = $smtp_pw;
 
-        $templatefile = $this->get_base_directory() . "/etc/muttrc.$protocol.template";
+        $templatefile = "$basedir/etc/muttrc.$protocol.template";
         if (!file_exists($templatefile))
             $this->abort("template file $templatefile not found", StatusCode::STATUS_EXECUTION);
         $template = file_get_contents($templatefile);
         if ($template == false)
-            $this->abort("template file not found", StatusCode::STATUS_EXECUTION);
+            $this->abort("template file $templatefilenot found", StatusCode::STATUS_EXECUTION);
 
         $from = "$name <$email>";
 
@@ -894,7 +897,7 @@ EOF;
             }
         }
 
-        $mailfolder=$this->get_base_directory() . "/Mail";
+        $mailfolder = "$basedir/Mail";
         $okey = file_put_contents($muttrc,
                     sprintf($template,
                         escapeshellarg($from),
@@ -910,7 +913,31 @@ EOF;
         if ($okey === false)
             $this->abort("could not write to $muttrc", StatusCode::STATUS_EXECUTION);
 
-        echo "Wrote profile to $muttrc. You may edit this file manually to make further adjustments.\n";
+        $templatefile = "$basedir/etc/fetchmailrc.template";
+        if (!file_exists($templatefile))
+            $this->abort("template file $templatefile not found", StatusCode::STATUS_EXECUTION);
+        $template = file_get_contents($templatefile);
+        if ($template == false)
+            $this->abort("template file $templatefile not found", StatusCode::STATUS_EXECUTION);
+
+        $okey = file_put_contents($fetchmailrc,
+                    sprintf($template,
+                        escapeshellarg($protocol_server),
+                        $protocol,
+                        intval($protocol_port),
+                        escapeshellarg($protocol_user),
+                        escapeshellarg($protocol_pw),
+                        escapeshellarg($basedir),
+                        escapeshellarg($basedir)
+                    ));
+        chmod($fetchmailrc, 0700);
+        if ($okey === false)
+            $this->abort("could not write to $fetchmailrc", StatusCode::STATUS_EXECUTION);
+
+
+        echo "Wrote profile to $muttrc and $fetchmailrc. You may edit this file manually to make further adjustments.\n";
+
+        mkdir($this->get_server_directory() . "/Mail");
     }
 
     function cmd_send(array $pos_args) :void {
@@ -966,6 +993,23 @@ EOF;
   //     send_report $faction
   //   done
   // fi
+
+    }
+
+    function cmd_fetch() {
+
+//   fetchmailrc=$ETCDIR/fetchmailrc
+//   procmailrc=$ETCDIR/procmailrc
+//   assert_file $fetchmailrc
+//   assert_file $procmailrc
+//   myid=$(id -u)
+//   RUNNING=$(pgrep -u $myid fetchmail)
+//   if [ "RUNNING" = "" ]; then
+//     echo "fetchmail does not appear to be running. Calling it once."
+//     fetchmail -f $fetchmailrc
+//   else
+//     fetchmail
+//   fi
 
     }
 
