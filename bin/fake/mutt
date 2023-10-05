@@ -1,0 +1,66 @@
+#!/bin/bash
+# simulating mutt -s subject email < text
+set -euo pipefail
+
+function abort() {
+	echo "$1"
+	exit 1
+}
+
+SOURCE=${BASH_SOURCE[0]}
+while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+  BASE=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
+  SOURCE=$(readlink "$SOURCE")
+  [[ $SOURCE != /* ]] && SOURCE=$BASE/$SOURCE # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+done
+BASE=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
+
+LOGFILE=$BASE/../../log/fakemail.log
+if [[ $(find "$LOGFILE" -size +10M -print) ]]; then
+  mv -f "$LOGFILE" "$LOGFILE~"
+fi
+
+subject='<missing subject>'
+rcfile=
+while getopts ":s:DEnpRvxyzZv::A:a:b:c:e:F:f:H:i:m:Q:" o; do
+  case "${o}" in
+  s) subject=${OPTARG} ;;
+  F) rcfile=${OPTARG} ;;
+  *) ;;
+  esac
+done
+
+email=
+for ((i=OPTIND; i<=$#; ++i)); do
+	if [ "${!i}" == "--" ]; then
+		email=
+	else
+		if [ -z "$email" ]; then
+			email=${!i}
+		else
+			email=$email,${!i}
+		fi
+	fi
+done
+[ -z "${email+x}" ] && email="missing email"
+
+[ -w "$LOGFILE" ] || touch "$LOGFILE"
+[ -w "$LOGFILE" ] || abort "cannot write to $LOGFILE"
+
+[ -z "$rcfile" ] || rcfile="rcfile: $rcfile"
+{
+echo "---"
+echo "HOME $HOME"
+echo "$rcfile"
+echo "mutt $*"
+echo "---"
+echo "TO: $email"
+echo "SUBJECT: $subject"
+echo "---"  >> "$LOGFILE"
+# print lines 1-5,...,-5-end
+awk -v n=5 '
+NR<=n { print $0;}
+NR>n {line[NR]=$0; if (NR>n) delete line[NR-n]}
+END {if (NR>10) print "..."; for(i=NR-(n-1); i<=NR; i++) print line[i]}'
+echo "---"
+} >> "$LOGFILE"

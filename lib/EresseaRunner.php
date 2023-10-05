@@ -26,7 +26,7 @@ class EresseaRunner {
     public bool $confirm_all = false;
     public ?string $game_id = null;
     public int $turn = -1;
-
+    public bool $fakemail = false;
 
     const GAME_ID_PATTERN = "/^[\p{L}\p{N}]+$/";
 
@@ -41,21 +41,13 @@ class EresseaRunner {
             'short' =>  'display help information; try help <command> or help config for information about a command or the configuration file'
         ],
         'install' => [
-            'commandline' => 'install [<branch>] [<server directory>] [<games directory>]',
+            'commandline' => 'install [ --orders-php | --server | --runner | --mail ] [<branch>] [--update] [--nopull]',
             'short' => 'install the server'
         ],
         'game' => [
             'std_runner' => true,
             'commandline' => 'game <rules>',
             'short' => 'start a new game'
-        ],
-        'upgrade' => [
-            'commandline' => 'upgrade <branch>',
-            'short' => 'recompile and install from source'
-        ],
-        'install_mail' => [
-            'std_runner' => true,
-            'short' => 'setup e-mail configuration'
         ],
         'eressea' => [
             'std_runner' => true,
@@ -83,7 +75,8 @@ class EresseaRunner {
         ],
         'fetch' => [
             'std_runner' => true,
-            'short' => 'fetch orders from mail server'
+            'commandline' => 'fetch [ --once | --listen | --quit ]',
+            'short' => 'fetch orders from mail server (once, continuously listen, stop listening) '
         ],
         'create_orders' => [
             'std_runner' => true,
@@ -105,57 +98,10 @@ class EresseaRunner {
         ]
     ];
 
-    function cmd(string $command, array $pos_args) {
-        if (isset(static::COMMANDS[$command])) {
-            $cmd="cmd_$command";
-            $this->$cmd($pos_args);
-        }
-    }
-
-
-    function get_cmd_line(string $command) : string {
-        return (EresseaRunner::COMMANDS[$command]['commandline'] ?? $command) . "\n";
-    }
-
-    function line_break(string $text, string $prefix = '', $linewidth = 100) : string {
-        $info = "";
-        $lines = explode("\n", $text);
-        foreach($lines as $line) {
-            if (!empty($info))
-                $info .= "\n";
-            $words = explode(" ", $line);
-            $info .= $prefix;
-            $pos = mb_strlen($prefix);
-            foreach ($words as $word) {
-                if ($pos != 0 && $pos + mb_strlen($word) > $linewidth) {
-                    $info .= "\n$prefix";
-                    $pos = mb_strlen($prefix)+1;
-                } elseif ($pos > mb_strlen($prefix)) {
-                    $info .= " ";
-                    ++$pos;
-                }
-                $info .= $word;
-                $pos+=mb_strlen($word);
-            }
-        }
-        return $info;
-    }
-
-    function short_info(string $command) : string {
-        $cinfo = EresseaRunner::COMMANDS[$command];
-        $cline = $this->get_cmd_line($command);
-
-        return "    $cline" . $this->line_break($cinfo['short'], '        ');
-    }
-
-    function usage(bool $short = true, int $exit = NULL, string $command = NULL) : void {
-        $name = $this->scriptname;
-
-
-        if ($command == NULL) {
-            echo <<<EOL
+    const HELP = [
+        0 => <<<EOL
 USAGE
-    $name [-f <configfile>] [-y] [-l <log level>] [-v <verbosity>]
+    %s [-f <configfile>] [-y] [-l <log level>] [-v <verbosity>]
         [-g <game-id>] [-t <turn>] <command> [<args>]...
 
     <configfile> contains all the game settings.
@@ -167,45 +113,40 @@ USAGE
     -y:
         do not ask for confirmation or user input whenever possible
 
-    Use $name help commands to get a list of all commands
-    and $name help <command> for help about a command.
+    Use %s help commands to get a list of all commands
+    and %s help <command> for help about a command.
 
 
-EOL;
-        } elseif ('config_not_found' == $command) {
-            echo "    You can create a config file with the install or the create_config command.\n";
-            echo "    You can manually set the location of the config file with the -c parameter.\n";
-        } else {
-            echo "USAGE:\n";
-            if ('commands' == $command) {
-                echo <<<EOL
+EOL,
+        'commands' => <<<EOL
 COMMANDS
 
     These commands are available:
 
-EOL;
-                foreach(static::COMMANDS as $cmd => $cinfo) {
-                    echo $this->short_info($cmd);
-                    echo "\n";
-                }
-            } else if ("game" == $command) {
-                echo $this->get_cmd_line($command);
-                echo "        you can use -g and -t to set the game ID and start turn, respectively\n";
-                echo "        <rules> is the rule set (e2 or e3)\n";
-            } else if ("eressea" == $command) {
-                echo $this->get_cmd_line($command);
-                echo "        call the eressea server with the given arguments\n\n";
-                $eressea = $this->get_server_directory() . "/bin/eressea";
-                if (is_executable($eressea)) {
-                    if (chdir(dirname($eressea))) {
-                        putenv("PATH=.");
-                        passthru("eressea --help");
-                    }
-                } else
-                    echo "Eressea executable no found; did you run '$name install'?\n";
-            } else if ("seed" == $command) {
-                echo $this->get_cmd_line($command);
-                echo $this->line_break(<<<EOL
+EOL,
+
+        'install' => <<<EOL
+
+    Install the server. <branch> is the repository branch (defaults to master)
+
+    --server
+        install only the server itself (the default)
+    --orders-php
+        install only the orders-php part
+    --runner
+        install the runner itself
+
+    --update
+        must be used if the server has already been installed
+    --nopull
+        do not pull updates from the repository, just install the files
+
+EOL,
+
+        'game' =>
+        "You can use -g and -t to set the game ID and start turn, respectively. <rules> is the rule set (e2 or e3).",
+
+        'seed' => <<<EOL
 This command reads the newfactions file in the game directory. This file contains one line for each new faction. A line contains an email address, a race, a langugage code (de or en), and optional additonal parameters all separated by one or more white space charaters. Lines starting with # are ignored.
 
 It then uses the given algorithm to create a new map and place the new factions on it. It also creates a file "autoseed.json" in the game directory. You can edit the file to change the behavior of the seeding algorithm.
@@ -214,16 +155,14 @@ If you don't specify an algorithm or if the algorithm in the autoseed.json file 
 
 The generated map is saved to auto.dat in the data directory. If the -r option is given, it the current turn data in 'data/<turn>.dat' is also replaced with the generated map.
 
-EOL, "    ");
+EOL,
 
-            } else if ("reports" == $command) {
-                echo $this->get_cmd_line($command);
-                echo $this->line_break(<<<EOL
+        'reports' => <<<EOL
 Write all report files. With -p it also re-generates all the passwords and writes them back to the report. Note that, if you run it without -p, there will be no new password messages in the reports and no passwords in the turn templates for new factions.
 
-EOL, "    ");
-            } else if ("config" == $command) {
-                echo <<<EOL
+EOL,
+
+        'config' => <<<EOL
 THE CONFIG FILE
 
     The config file is a PHP file:
@@ -248,17 +187,98 @@ THE CONFIG FILE
     );
 ?>
 
-EOL;
+EOL,
 
-            } elseif (isset(EresseaRunner::COMMANDS[$command])) {
-                echo $this->short_info($command);
-                echo "\n";
+    ];
+
+    function cmd(string $command, array $pos_args) {
+        if (isset(static::COMMANDS[$command])) {
+            $cmd="cmd_$command";
+            $this->$cmd($pos_args);
+        }
+    }
+
+
+    function get_cmd_line(string $command) : string {
+        return (EresseaRunner::COMMANDS[$command]['commandline'] ?? $command) . "\n";
+    }
+
+    function line_break(string $text, string $prefix = '', $linewidth = 100) : string {
+        $info = "";
+        $lines = explode("\n", $text);
+        foreach($lines as $line) {
+            preg_match("/^( *)(.*)/", $line, $matches);
+            $indent = $matches[1] . $prefix;
+            $line = $matches[2];
+            if (!empty($info))
+                $info .= "\n";
+            $words = explode(" ", $line);
+            $info .= $indent;
+            $pos = mb_strlen($indent);
+            foreach ($words as $word) {
+                if ($pos != 0 && $pos + mb_strlen($word) > $linewidth) {
+                    $info .= "\n$indent";
+                    $pos = mb_strlen($indent)+1;
+                } elseif ($pos > mb_strlen($indent)) {
+                    $info .= " ";
+                    ++$pos;
+                }
+                $info .= $word;
+                $pos+=mb_strlen($word);
+            }
+        }
+        return $info;
+    }
+
+    function short_info(string $command) : string {
+        $cinfo = EresseaRunner::COMMANDS[$command];
+        $cline = $this->get_cmd_line($command);
+
+        return "    $cline" . $this->line_break($cinfo['short'], '        ');
+    }
+
+    function usage(bool $short = true, int $exit = NULL, string $command = NULL) : void {
+        $name = $this->scriptname;
+
+        if ($command == NULL) {
+            echo sprintf(static::HELP[0], $name, $name, $name);
+        } elseif ('config_not_found' == $command) {
+            echo "    You can create a config file with the install or the create_config command.\n";
+            echo "    You can manually set the location of the config file with the -c parameter.\n";
+        } else {
+            echo "USAGE:\n";
+            if ('commands' == $command) {
+                echo $this->line_break(static::HELP[$command]);
+                foreach(static::COMMANDS as $cmd => $cinfo) {
+                    echo $this->short_info($cmd);
+                    echo "\n";
+                }
+            } else if ("eressea" == $command) {
+                echo $this->get_cmd_line($command);
+                echo "        call the eressea server with the given arguments\n\n";
+                $eressea = $this->get_server_directory() . "/bin/eressea";
+                if (is_executable($eressea)) {
+                    if (chdir(dirname($eressea))) {
+                        putenv("PATH=.");
+                        passthru("eressea --help");
+                    }
+                } else
+                    echo "Eressea executable no found; did you run '$name install'?\n";
+            } elseif (isset(static::COMMANDS[$command])) {
+                if (isset(static::HELP[$command])) {
+                    echo $this->get_cmd_line($command);
+                    echo $this->line_break(static::HELP[$command], "    ");
+                } else {
+                    echo $this->short_info($command);
+                    echo "\n";
+                }
+            } else if (isset(static::HELP[$command])) {
+                echo static::HELP[$command];
             } else {
                 echo "    No information on the command '$command'.\n";
             }
             echo "\n";
         }
-
 
         if ($exit !== NULL) {
             exit($exit);
@@ -302,6 +322,10 @@ EOL;
 
         if ($exitcode != StatusCode::STATUS_GOOD)
             exit($exitcode);
+    }
+
+    function set_fakemail(bool $fake) : void {
+        $this->fakemail = $fake;
     }
 
     function cmd_info(string $configfile, array $argv, array $pos_args) : void {
@@ -463,18 +487,44 @@ EOL;
         return $out;
     }
 
-    function cmd_install(array $pos_args, bool $update = false) : void {
+    function cmd_install(array $pos_args) : void {
         $basedir = $this->get_base_directory();
 
+        $pull = true;
+        $update = false;
+        foreach($pos_args as $arg) {
+            if ("--mail" == $arg) {
+                $this->install_mail();
+                return;
+            } else if ("--orders-php" == $arg) {
+                $this->info("not implemented");
+                return;
+            } else if ("--runner" == $arg) {
+                $this->info("not implemented");
+                return;
+            } else if ("--update" == $arg) {
+                $update = true;
+            } else if ("--nopull" == $arg) {
+                $pull = false;
+            } else if (empty($branch)) {
+                $branch = $arg;
+            } else {
+                $this->abort("unknown parameter $arg", StatusCode::STATUS_PARAMETER);
+            }
+        }
 
         // TODO check dependencies git cmake ...?
+        if (!empty($this->config['runner']['srcbranch']) && empty($branch))
+            $branch = $this->config['runner']['srcbranch'];
 
-        // TODO $branch = $this->config['runner']['srcbranch'];
-        $branch = 'master';
-        $out = $this->exec("git -C eressea-source branch --show-current");
-        if (!empty($out))
-            $branch = $out[0];
-        $branch = $pos_args[0] ?? $branch;
+        if (empty($branch) && is_dir("$basedir/eressea-source")) {
+            $out = $this->exec("git -C '$basedir/eressea-source' branch --show-current");
+            if (!empty($out))
+                $branch = $out[0];
+        }
+
+        if (empty($branch))
+            $branch = 'master';
 
         if (!$this->input("Install branch: ", $branch))
             exit(StatusCode::STATUS_NORMAL);
@@ -498,21 +548,28 @@ EOL;
             exit(StatusCode::STATUS_NORMAL);
 
         if (!$update && file_exists($abs_installdir)) {
-            $msg = "Installation directory exists, please use the update command";
+            $msg = "Installation directory exists, please use the --update option";
             $this->abort($msg, StatusCode::STATUS_NORMAL);
         }
 
-        // does not work!
+        $this->info("stopping fetchmail");
+        $this->cmd_fetch([ "--quit" ]);
+
+        // does not work:
         // $this->exec("cd $basedir/eressea-source");
         $this->chdir("$basedir/eressea-source");
 
-        $this->exec("git fetch");
+        if ($pull) {
+            $this->exec("git fetch");
 
-        $this->exec("git checkout '$branch'", "Failed to update source. Do you have local changes?");
+            $this->exec("git checkout '$branch'", "Failed to update source. Do you have local changes?");
 
-        $this->exec("git pull --rebase origin '$branch'", "Failed to update source. Do you have local changes?");
+            $this->exec("git pull --ff-only", "Failed to update source. Do you have local changes?");
 
-        $this->exec("git submodule update --init --recursive");
+            $this->exec("git submodule update --init --recursive");
+
+            $this->config['runner']['srcbranch'] = $branch;
+        }
 
         $this->exec("s/cmake-init");
 
@@ -529,7 +586,7 @@ EOL;
         $this->save_config();
 
         if ($this->confirm("Would you also like to setup e-mail?")) {
-            $this->cmd_install_mail();
+            $this->install_mail();
         }
     }
 
@@ -690,15 +747,23 @@ EOF;
     function set_lua_path() :void {
         if ($this->lua_path == null) {
             $lua_path = getenv("LUA_PATH");
+            $path = getenv("PATH");
             $this->debug("old lua path $lua_path");
+            $this->debug("old path $path");
+
             $paths = $this->exec("luarocks path");
             foreach($paths as $line) {
-                $line = substr($line, 7);
+                preg_match("/^export ([^=]*=)'(.*)'/", $line, $matches);
+                $line = $matches[1] . $matches[2];
+                $this->debug($line);
                 putenv($line);
             }
 
             $lua_path = getenv("LUA_PATH");
+            $path = getenv("PATH");
             $this->debug("luarocks lua path $lua_path");
+            $this->debug("luarocks path $path");
+
             if ($lua_path === false) $lua_path = '';
             putenv("LUA_PATH=" . $this->get_base_directory() . "/scripts/?.lua;./?.lua;" .
                  $this->get_server_directory() . "/scripts/?.lua;$lua_path");
@@ -764,6 +829,7 @@ EOF;
             $argstring .= " " . escapeshellarg($arg);
         }
         $this->log("$scriptname $argstring\n");
+
         return passthru("$scriptname $argstring") ===   null;
     }
 
@@ -790,13 +856,21 @@ EOF;
     }
 
     function check_email() : bool {
-        if (isset($this->config['runner']['muttrc']))
+        if (isset($this->config['runner']['muttrc'])) {
+            if ($this->fakemail) {
+                $path = getenv("PATH");
+                $bin = $this->get_base_directory() . "/bin/fake";
+                $this->log("set path $bin:$path");
+                putenv("PATH=$bin:$path");
+            }
+
             return true;
+        }
 
         $this->abort("E-mail is not configured. Please set it up with the command install_mail.", StatusCode::STATUS_EXECUTION);
     }
 
-    function cmd_install_mail(?array $pos_args = null) : void {
+    function install_mail(?array $pos_args = null) : void {
         $home=getenv("HOME");
         $xdgc=getenv("XDG_CONFIG_HOME");
         $muttrc = "$home/.muttrc";
@@ -948,23 +1022,25 @@ EOF;
     function cmd_send(array $pos_args) :void {
         $this->goto_game();
         $this->chdir("reports");
-        if (!file_exists("reports.txt"))
+        if (!file_exists("reports.txt")) {
             $this->abort("missing reports.txt for game " . $this->game_id, StatusCode::STATUS_EXECUTION);
+        }
 
         $this->check_email();
 
         $this->call_script("compress.sh", [$this->game_id]);
 
-        if (empty(glob("[a-kLm-z0-9]*.sh")))
+        if (empty(glob("[a-kLm-z0-9]*.sh"))) {
             $this->abort("no send scripts in " . getcwd(), StatusCode::STATUS_EXECUTION);
+        }
 
         // trick mutt into finding its configuration
-        $oldhome=getenv("HOME");
+        $oldhome = getenv("HOME");
         putenv("HOME=" . dirname($this->config['runner']['muttrc']));
 
-        if (empty($pos_args))
+        if (empty($pos_args)) {
             $this->call_script("sendreports.sh", [$this->game_id]);
-        else {
+        } else {
             for ($pos = 0; $pos < count($pos_args); ) {
                 $fid = $pos_args[$pos++];
                 $scriptname = "$fid.sh";
@@ -983,25 +1059,9 @@ EOF;
                 }
             }
         }
-
-
-  //         sent=0
-  // assert_dir $GAMEDIR/reports
-  // cd $GAMEDIR/reports
-  // [ -f reports.txt ] || abort "missing reports.txt for game $game"
-  // for faction in $* ; do
-  //   send_report $faction
-  //   sent=1
-  // done
-  // if [ $sent -eq 0 ]; then
-  //   for faction in $(cat reports.txt | cut -f1 -d: | cut -f2 -d=); do
-  //     send_report $faction
-  //   done
-  // fi
-
     }
 
-    function cmd_fetch() {
+    function cmd_fetch($pos_args) {
         $this->check_email();
         $this->chdir($this->get_base_directory());
 
@@ -1012,7 +1072,30 @@ EOF;
         if (!file_exists($procmailrc))
             $this->abort("Procmail configuration $procmailrc not found.", StatusCode::STATUS_EXECUTION);
 
-        $out = $this->exec("bin/start_fetchmail.sh '$fetchmailrc'");
+
+        $fargs = '';
+        foreach ($pos_args as $arg) {
+            switch ($arg) {
+                case '--once':
+                $fargs .= " -1";
+                break;
+
+                case '--listen':
+                $fargs .= " -l";
+                break;
+
+                case '--quit':
+                $fargs .= " -q";
+                break;
+
+                default:
+                $this->abort("unknwon argument $arg", StatusCode::STATUS_PARAMETER);
+                break;
+            }
+        }
+
+
+        $out = $this->exec("bin/start_fetchmail.sh $fargs '$fetchmailrc'");
         foreach($out as $line)
             $this->info($line);
     }
@@ -1246,6 +1329,8 @@ while (isset($argv[$optind])) {
         $runner->set_turn($argv[++$optind]);
     } elseif ('-y' === $arg) {
         $runner->confirm_all = true;
+    } elseif ('--fakemail' == $arg) {
+        $runner->set_fakemail(true);
     } else if (str_starts_with($arg, "-")) {
         if ($verbosity > 0)
             echo "unknown option '$arg'\n";
@@ -1286,8 +1371,6 @@ if ('help' == $command) {
     $runner->usage(false, StatusCode::STATUS_NORMAL, $pos_args[0] ?? NULL);
 } elseif ('install' == $command) {
     $runner->cmd_install($pos_args);
-} elseif ('update' == $command) {
-    $runner->cmd_install($pos_args, true);
 } elseif ('create_config' == $command) {
     $runner->save_config();
 } else {
