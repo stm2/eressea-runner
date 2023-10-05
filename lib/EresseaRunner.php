@@ -483,7 +483,7 @@ EOL,
 
         exec($cmd, $out, $result);
 
-        $this->log("done");
+        $this->log("done (exit status $result)");
         foreach($out as $line)
             $this->debug($line);
 
@@ -1013,8 +1013,13 @@ EOF;
         if ($template == false)
             $this->abort("template file $templatefile not found", StatusCode::STATUS_EXECUTION);
 
+        $this->info("stopping fetchmail");
+        $this->cmd_fetch([ "--quit" ]);
+
         $okey = file_put_contents($fetchmailrc,
                     sprintf($template,
+                        escapeshellarg($basedir),
+                        escapeshellarg($basedir),
                         escapeshellarg($protocol_server),
                         $protocol,
                         intval($protocol_port),
@@ -1027,11 +1032,23 @@ EOF;
         if ($okey === false)
             $this->abort("could not write to $fetchmailrc", StatusCode::STATUS_EXECUTION);
 
+        touch("$basedir/log/fetchmail.log");
+        chmod("$basedir/log/fetchmail.log", 0700);
+        touch("$basedir/etc/.fetchids");
+        chmod("$basedir/etc/.fetchids", 0700);
 
-        echo "Wrote profile to $muttrc and $fetchmailrc. You may edit this file manually to make further adjustments.\n";
+        echo "Wrote profile to $muttrc and $fetchmailrc. You may edit these files manually to make further adjustments.\n";
 
         mkdir($this->get_base_directory() . "/Mail");
         // TODO crontab setup
+
+        if ($this->confirm("Start fetchmail in the background now?")) {
+            $this->debug("starting fetchmail");
+            $this->cmd_fetch([ "--listen" ]);
+        } else {
+            $this->info("You may use the fetch command to start fetchmail.");
+        }
+
     }
 
 
@@ -1115,7 +1132,7 @@ EOF;
         }
     }
 
-    function install_cron(?array $pos_args = null) : void {
+    function install_cron(array $pos_args = []) : void {
         $basedir = $this->get_base_directory();
         $clear = false;
 

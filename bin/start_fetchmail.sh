@@ -26,6 +26,10 @@ fi
 [ -n "${1+x}" ] || abort "missing argument fetchmailrc"
 [ -f "$1" ] || abort "fetchmailrc $1 not readable"
 
-myid=$(id -u)
+# myid=$(id -u)
 # RUNNING=$(pgrep -u "$myid" -x fetchmail || true)
-echo fetchmail "$once" -f "$1"
+if [ -z "$once" ]; then
+    fetchmail -f "$1"
+else
+    fetchmail "$once" -f "$1"
+fi

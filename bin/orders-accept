@@ -19,8 +19,14 @@ lang=en
 if [ -n "$(echo "${parts[3]}" | sed -e "/orders.*/Id")" ]; then
     lang=de
 fi
+gamename=${parts[1]}
+suffix=${parts[3]}
 game=${parts[2]}
 gamedir="$ERESSEA/game-$game"
+
+logfile=$ERESSEA/log/orders-accept.log
+echo "$(date) '$gamename' '$game' '$suffix' '$lang'" >> "$logfile"
+
 
 # trick mutt into finding etc/.muttrc
 HOME="$ERESSEA/etc"
@@ -29,7 +35,7 @@ HOME="$ERESSEA/etc"
 cd "$gamedir"
 mkdir -p orders.dir
 cd orders.dir
-eval "$("$ERESSEA/server/bin/accept-orders.py" "$game" "$lang")"
+eval "$("$ERESSEA/server/bin/accept-orders.py" "$game" "$lang" | tee -a "$logfile")"
 if [ -e "$ACCEPT_FILE" ]
 then
     filename=$(basename "$ACCEPT_FILE")

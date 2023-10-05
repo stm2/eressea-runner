@@ -1,5 +1,8 @@
 # insert your provider's pop3 server, user name and password
 
+set logfile "%s/log/fetchmail.log"
+set idfile "%s/etc/.fetchids"
+
 set daemon 120
 
 poll %s protocol %s service %d with :
