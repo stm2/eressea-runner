@@ -41,7 +41,7 @@ class EresseaRunner {
             'short' =>  'display help information; try help <command> or help config for information about a command or the configuration file'
         ],
         'install' => [
-            'commandline' => 'install [ --orders-php | --server | --runner | --mail ] [<branch>] [--update] [--nopull]',
+            'commandline' => 'install [ --orders-php | --server | --runner | --mail | --cron ] [<branch>] [--update] [--nopull]',
             'short' => 'install the server'
         ],
         'game' => [
@@ -135,6 +135,13 @@ EOL,
         install only the orders-php part
     --runner
         install the runner itself
+    --mail
+        setup e-mail service
+    --cron
+        setup the cron service; supports additional options:
+        --list shows the currently installed crontab
+        --edit opens the crontab editor to make changes manually
+        --clear clears all eressea crontab entries
 
     --update
         must be used if the server has already been installed
@@ -496,6 +503,10 @@ EOL,
             if ("--mail" == $arg) {
                 $this->install_mail();
                 return;
+            } else if ("--cron" == $arg) {
+                array_shift($pos_args);
+                $this->install_cron($pos_args);
+                return;
             } else if ("--orders-php" == $arg) {
                 $this->info("not implemented");
                 return;
@@ -587,6 +598,10 @@ EOL,
 
         if ($this->confirm("Would you also like to setup e-mail?")) {
             $this->install_mail();
+        }
+
+        if ($this->confirm("Would you also like to setup the cron service?")) {
+            $this->install_cron();
         }
     }
 
@@ -1017,6 +1032,316 @@ EOF;
 
         mkdir($this->get_base_directory() . "/Mail");
         // TODO crontab setup
+    }
+
+
+    const SET_ERESSEA_PATTERN = "/ERESSEA=(.*)/";
+    const SET_FETCHMAILRC_PATTERN = "/FETCHMAILRC=(.*)/";
+    const TIME_PATTERN = "(([^\s])+[ \t]+([^\s])+[ \t]+([^\s])+[ \t]+([^\s])+[ \t]+([^\s])+)";
+    // 15 21 * * Sat        $ERESSEA/server/bin/run-eressea.cron 1
+    const RUNNER_LINE = "1 1 1 1 1    \$ERESSEA/server/bin/run-eressea.cron 999";
+    const RUNNER_PATTERN = "[ \t]+((.*run-eressea.cron\s+)([A-Za-z0-9]*)(.*))";
+    //*/15 * * * *          $ERESSEA/server/bin/orders.cron 1
+    const CHECKER_LINE = "1 1 1 1 1    \$ERESSEA/server/bin/orders.cron 999";
+    const CHECKER_PATTERN = "[ \t]+((.*orders.cron\s+)([A-Za-z0-9]*)(.*))";
+    // 00 *  * * *         [ -f $FETCHMAILRC ] && fetchmail --quit -f $FETCHMAILRC >> $ERESSEA/log/fetchmail.log 2>&1
+    const FETCHMAIL_LINE = "* */1 * * *    [ -f \$FETCHMAILRC ] && fetchmail --quit -f \$FETCHMAILRC >> \$ERESSEA/log/fetchmail.log 2>&1";
+    const FETCHMAIL_PATTERN = "[ \t]+(.*fetchmail.*)";
+
+    function analyze_crontab($runner_pattern, $checker_pattern) : array {
+        $out = $this->exec("crontab -l");
+
+        $info = [ 'crontab' => $out, 'runners' => [], 'checkers' => [], 'fetchmail' => [], 'other' => [] ];
+        $l=0;
+
+        foreach($out as $line) {
+            if (!empty($line) && !str_starts_with($line, '#')) {
+                if (preg_match($runner_pattern, $line, $matches) == 1) {
+                    $info['runners'][] = [
+                     'line' => $l,
+                     'text' => $line,
+                     'time' => $matches[1],
+                     'game' => $matches[9] ];
+                } else if (preg_match($checker_pattern, $line, $matches) == 1) {
+                    $info['checkers'][] = [
+                     'line' => $l,
+                     'text' => $line,
+                     'time' => $matches[1],
+                     'game' => $matches[9] ];
+                } else if (preg_match("/". static::TIME_PATTERN . static::FETCHMAIL_PATTERN . "/", $line, $matches) == 1) {
+                    $info['fetchmail'][] = [
+                     'line' => $l,
+                     'text' => $line,
+                     'time' => $matches[1] ];
+                } else if (preg_match(static::SET_ERESSEA_PATTERN, $line, $matches)) {
+                    $info['set_eressea'][] = [
+                        'line' => $l,
+                        'text' => $line,
+                        'value' => $matches[1]
+                    ];
+                } else if (preg_match(static::SET_FETCHMAILRC_PATTERN, $line, $matches)) {
+                    $info['set_fetchmailrc'][] = [
+                        'line' => $l,
+                        'text' => $line,
+                        'value' => $matches[1]
+                    ];
+                } else {
+                    $info['other'][] = $line;
+                }
+            }
+            ++$l;
+        }
+        return $info;
+    }
+
+
+    function keep_time(array &$info) {
+
+        $abort = function() {
+            exit(StatusCode::STATUS_PARAMETER);
+        };
+
+        if ($this->confirm("Keep this?")) {
+            $info['keep'] = true;
+            $time = $info['time'];
+            $prompt = "Time";
+            while(($this->input($prompt, $time) || $abort() ) &&
+                preg_match('/' . static::TIME_PATTERN . '/', $time) !== 1) {
+                $prompt = "Invalid time $time. Time";
+                $time = $info['time'];
+            }
+
+            $info['time'] = $time;
+        }
+    }
+
+    function install_cron(?array $pos_args = null) : void {
+        $basedir = $this->get_base_directory();
+        $clear = false;
+
+        $runner_pattern = "/". static::TIME_PATTERN . static::RUNNER_PATTERN . "/";
+        $checker_pattern = "/". static::TIME_PATTERN . static::CHECKER_PATTERN . "/";
+
+        $runners_active = 0;
+        $fetchmail_active = 0;
+
+        foreach($pos_args as $arg) {
+            if ("--list" == $arg) {
+                passthru("crontab -l");
+                return;
+            }
+            if ("--edit" == $arg) {
+                passthru("crontab -e");
+                return;
+            }
+            if ("--clear" == $arg) {
+                $clear = true;
+            }
+        }
+
+        $cron_info = $this->analyze_crontab($runner_pattern, $checker_pattern);
+
+        if (!empty($cron_info['other'])) {
+            $this->info("There are unknown lines in your crontab file. Changing it may be dangerous.");
+        }
+
+        if (!empty($cron_info['runners'])) {
+            $this->info("There are runners installed:");
+            foreach($cron_info['runners'] as &$runner) {
+                $this->info('Game ' . $runner['game'] . ' time: ' . $runner['time']);
+                if ($clear) {
+                    $this->info("disabling");
+                } else {
+                    $this->keep_time($runner);
+                }
+            }
+            unset($runner);
+        }
+
+        if (!empty($cron_info['checkers'])) {
+            $this->info("There are checkers installed:");
+            foreach($cron_info['checkers'] as &$runner) {
+                $this->info('Game ' . $runner['game'] . ' time: ' . $runner['time']);
+                if ($clear) {
+                    $this->info("disabling");
+                } else {
+                    $this->keep_time($runner);
+                }
+            }
+            unset($runner);
+        }
+
+        if (!empty($cron_info['fetchmail'])) {
+            $this->info("Fetchmail installed:");
+            if (count($cron_info['fetchmail']) > 1) {
+                $this->warn('More than one fetchmail line!');
+            }
+            if ($clear) {
+                $this->info("disabling");
+            } else if ($this->confirm("Keep this?")) {
+                foreach($cron_info['fetchmail'] as &$info) {
+                    $info['keep'] = true;
+                }
+                unset($info);
+            }
+        }
+
+        if (!$clear && $this->confirm("Schedule new server run?")) {
+            do {
+                $this->input("Game ID", $id);
+            } while (empty($id));
+
+            $mode = 'w';
+            $this->input("Run weekly (w), daily (d), every n minutes (m) or input manually (i)?", $mode);
+            switch($mode) {
+            case 'w':
+                $day = 6;
+                do {
+                  $this->input("Day of week (1 = monday, 7 = sunday)", $day);
+                } while ($day <= 0 || $day > 7);
+
+                $hour = 21;
+                do {
+                    $this->input("Hour (0-23)", $hour);
+                } while ($hour < 0 || $hour > 23);
+                $minute = 0;
+                do {
+                    $this->input("Minute (0-59)", $minute);
+                } while ($minute < 0 || $minute > 59);
+
+                $time = "$minute $hour * * " . [ 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun
+                '][$day-1];
+
+            break;
+            case 'd':
+                $hour = 21;
+                do {
+                    $this->input("Hour (0-23)", $hour);
+                } while ($hour < 0 || $hour > 23);
+                $minute = 0;
+                do {
+                    $this->input("Minute (0-59)", $minute);
+                } while ($minute < 0 || $minute > 59);
+
+                $time = "$minute $hour * * *";
+
+            break;
+
+            case 'm':
+                $interval = 60;
+                do {
+                    $this->input("Minutes (1-1440)", $interval);
+                } while ($interval < 1 || $interval > 1440);
+
+                $time = "*/$interval * * * *";
+
+            break;
+
+            case 'i':
+                $time = get_time($time);
+
+            break;
+            }
+            $runner = [ 'time' => $time, 'new' => true, 'id' => $id ];
+
+            if ($mode == 'm') {
+                $this->info("Checkers for games running every x minutes are not recommended.");
+            } else if ($this->confirm("Add checker for this game?")) {
+                $interval = 15;
+                do {
+                    $this->input("Run every ... minutes (1-1440)", $interval);
+                } while ($interval < 1 || $interval > 1440);
+
+                $runner['checker']['time'] = "*/$interval * * * *";
+            }
+            ++$runners_active;
+            $cron_info['runners'][] = $runner;
+        }
+
+
+        $lines = [];
+        foreach($cron_info['runners'] as $info) {
+            if (isset($info['keep'])) {
+                $time = $info['time'];
+                $game = $info['game'];
+                $lines[$info['line']] = preg_replace($runner_pattern, "$time \${8}$game\${10}", $info['text']);
+                ++$runners_active;
+            } else if (isset($info['line'])) {
+                $lines[$info['line']] = "# " . $info['text'];
+            }
+        }
+
+
+        foreach($cron_info['checkers'] as $info) {
+            if (isset($info['keep'])) {
+                $time = $info['time'];
+                $game = $info['game'];
+                $lines[$info['line']] = preg_replace($checker_pattern, "$time \${8}$game\${10}", $info['text']);
+            } else if (isset($info['line'])) {
+                $lines[$info['line']] = "# " . $info['text'];
+            }
+        }
+
+
+        foreach ($cron_info['fetchmail'] as $info) {
+            if (isset($info['keep'])) {
+                $lines[$info['line']] = $info['text'];
+                ++$fetchmail_active;
+            } else if (isset($info['line'])) {
+                $lines[$info['line']] = "# " . $info['text'];
+            }
+        }
+
+        $i = 0;
+        $tab = "";
+
+        if ($runners_active > 0 && empty($cron_info['set_eressea'])) {
+            $tab .= "\n# Environment variables are not visible from cron\n" .
+                "# setup ERESSEA variable\n";
+            $tab .= "ERESSEA=$basedir\n";
+            $tab .= "FETCHMAILRC=$basedir/etc/fetchmailrc\n\n";
+        }
+
+        foreach($cron_info['crontab'] as $line) {
+            if (isset($lines[$i])) {
+                $tab .= $lines[$i] . "\n";
+            } else {
+                $tab .= $line . "\n";
+            }
+            ++$i;
+        }
+
+        foreach($cron_info['runners'] as $info) {
+            if (isset($info['new'])) {
+                $game = $info['id'];
+                $time = $info['time'];
+                $tab .= "\n#runner for game $game\n";
+                $tab .=  preg_replace($runner_pattern, "$time \${8}$game\${10}", static::RUNNER_LINE) . "\n\n";
+
+                if (isset($info['checker']['time'])) {
+                $time = $info['checker']['time'];
+                $tab .= "#checker for game $game\n";
+                $tab .=  preg_replace($checker_pattern, "$time \${8}$game\${10}", static::CHECKER_LINE) . "\n\n";
+                }
+            }
+        }
+
+        if ($runners_active > 0 && $fetchmail_active == 0) {
+            if ($this->confirm("Do you want to start fetchmail automatically?")) {
+                $tab .= "\n# start fetchmail demon\n";
+                $tab .= static::FETCHMAIL_LINE ."\n";
+            }
+        }
+        $tab .= "\n";
+
+        $this->info("------------------------------------\n$tab");
+
+        if ($this->confirm("\nAbove is your new crontab. Install it?")) {
+            $filename = "$basedir/etc/crontab.installed";
+            file_put_contents($filename, $tab);
+            $this->exec("crontab $filename");
+        }
+
     }
 
     function cmd_send(array $pos_args) :void {

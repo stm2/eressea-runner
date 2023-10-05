@@ -1,0 +1,25 @@
+# Crontab for Eressea server
+# Your regular environment variables are not visible by cron.
+# Adjust these values according to your system.
+# Setting variables like this might not work for your crontab implementation.
+# If this is the case, you could start a custom bash script here and set
+# variables there instead
+
+ERESSEA=%s
+FETCHMAILRC=%s
+
+# EXAMPLES
+
+# run the server for game 1 at 9:15 pm every Saturday
+# add one line for every game you might be running
+# remove the # in the following line to activate
+#15 21 * * Sat        $ERESSEA/server/bin/run-eressea.cron 1
+
+# run order confirmation for game 1 every 15 minutes
+#*/15 * * * *          $ERESSEA/server/bin/orders.cron 1
+
+
+# m h  dom mon dow   command
+# starts the fetchmail daemon; note that only one daemon process is permitted per user
+# 00 *  * * *         [ -f $FETCHMAILRC ] && fetchmail --quit -f $FETCHMAILRC >> $ERESSEA/log/fetchmail.log 2>&1
+
