@@ -320,7 +320,7 @@ EOL,
         Logger::debug($msg);
     }
 
-    function abort(string $msg, int $exitcode) : void {
+    function abort(string $msg, StatusCode $exitcode) : void {
         if ($exitcode == StatusCode::STATUS_NORMAL) {
             $this->info($msg);
         } else {
@@ -328,7 +328,7 @@ EOL,
         }
 
         if ($exitcode != StatusCode::STATUS_GOOD)
-            exit($exitcode);
+            exit($exitcode->value);
     }
 
     function set_fakemail(bool $fake) : void {
@@ -336,7 +336,8 @@ EOL,
     }
 
     function cmd_info(string $configfile, array $argv, array $pos_args) : void {
-        $this->info("\nworking directory: '" . getcwd() . "'");
+        $this->info("\ncommand: " . $this->scriptname);
+        $this->info("working directory: '" . getcwd() . "'");
         $this->info("config: '$configfile'");
         foreach ($pos_args as $key => $value) {
             $this->log("arg[$key]: '$value'\n");
@@ -360,18 +361,28 @@ EOL,
             }
         }
 
+
         if (isset($this->config['runner']['basedir']) &&
             isset($this->config['runner']['serverdir'])) {
             $serverdir = $this->get_server_directory();
 
             $out = [];
             $this->call_eressea('', [ '--version' ], $out);
-            $text = "eressea: ";
             foreach($out as $line)
                 $text .= $line;
 
-            $this->info("$text\n");
+            $this->info("eressea: $text\n");
+        } else {
+            $this->info("eressea not configured");
         }
+
+        $out = $this->exec('echecks -V', null, false);
+        $text='';
+        foreach($out as $line)
+            $text .= $line;
+        $this->info("echeck: $text");
+        $this->info("PATH" . getenv("PATH"));
+
 
     }
 
@@ -1040,7 +1051,6 @@ EOF;
         echo "Wrote profile to $muttrc and $fetchmailrc. You may edit these files manually to make further adjustments.\n";
 
         mkdir($this->get_base_directory() . "/Mail");
-        // TODO crontab setup
 
         if ($this->confirm("Start fetchmail in the background now?")) {
             $this->debug("starting fetchmail");
@@ -1059,7 +1069,7 @@ EOF;
     const RUNNER_LINE = "1 1 1 1 1    \$ERESSEA/server/bin/run-eressea.cron 999";
     const RUNNER_PATTERN = "[ \t]+((.*run-eressea.cron\s+)([A-Za-z0-9]*)(.*))";
     //*/15 * * * *          $ERESSEA/server/bin/orders.cron 1
-    const CHECKER_LINE = "1 1 1 1 1    \$ERESSEA/server/bin/orders.cron 999";
+    const CHECKER_LINE = "1 1 1 1 1    \$ERESSEA/bin/orders.cron 999";
     const CHECKER_PATTERN = "[ \t]+((.*orders.cron\s+)([A-Za-z0-9]*)(.*))";
     // 00 *  * * *         [ -f $FETCHMAILRC ] && fetchmail --quit -f $FETCHMAILRC >> $ERESSEA/log/fetchmail.log 2>&1
     const FETCHMAIL_LINE = "* */1 * * *    [ -f \$FETCHMAILRC ] && fetchmail --quit -f \$FETCHMAILRC >> \$ERESSEA/log/fetchmail.log 2>&1";
@@ -1612,126 +1622,131 @@ EOF;
         else
             return $gamedir . "/game-" . $id;
     }
-}
 
-function get_logger(?array $config, int $log_level) : Logger {
-    if (!isset($config['runner']))
-        $logfile = NULL;
-    else {
-        $logfile = $config['runner']['logfile'] ?? ($config['runner']['basedir'] . "/log/runner.log") ?? NULL;
-        if (!str_starts_with($logfile, "/"))
-            $logfile = $config['runner']['basedir'] . "/" . $logfile;
+    static function get_logger(?array $config, int $log_level) : Logger {
+        if (!isset($config['runner']))
+            $logfile = NULL;
+        else {
+            $logfile = $config['runner']['logfile'] ?? ($config['runner']['basedir'] . "/log/runner.log") ?? NULL;
+            if (!str_starts_with($logfile, "/"))
+                $logfile = $config['runner']['basedir'] . "/" . $logfile;
+        }
+
+        $logger = new Logger;
+        $logger->set_level($log_level);
+
+        if ($logfile) {
+            if (!file_exists(dirname($logfile)))
+                mkdir(dirname($logfile));
+            if ((file_exists($logfile) && is_writable($logfile)) || is_writable(dirname($logfile))) {
+                $logger->set_file($logfile);
+                $logger->info("set log file to '$logfile', log level '$log_level'");
+            } else {
+                $logger->error("could not access log file '$logfile'");
+            }
+        }
+        return $logger;
     }
 
-    $logger = new Logger;
-    $logger->set_level($log_level);
+    public static function main($argv) {
+        $runner = new EresseaRunner;
 
-    if ($logfile) {
-        if (!file_exists(dirname($logfile)))
-            mkdir(dirname($logfile));
-        if ((file_exists($logfile) && is_writable($logfile)) || is_writable(dirname($logfile))) {
-            $logger->set_file($logfile);
-            $logger->info("set log file to '$logfile', log level '$log_level'");
+        $usage = 0;
+        $optind = 1;
+        $log_level = Logger::INFO;
+        $verbosity = 1;
+        $scriptname = $_SERVER['PHP_SELF'];
+
+        if (realpath($scriptname) !== false)
+            $configfile = dirname(dirname(realpath($scriptname))) . "/conf/config.php";
+        else
+            $configfile = realpath(".") . "/conf/config.php";
+        while (isset($argv[$optind])) {
+            $arg = $argv[$optind];
+            if (in_array($arg, ['-h', '--help'])) {
+                $usage = 2;
+            } elseif ('-c' === $arg) {
+                $scriptname = $argv[++$optind];
+            } elseif ('-f' === $arg) {
+                $configfile = $argv[++$optind];
+            } elseif ('-v' === $arg) {
+                $verbosity = $argv[++$optind];
+            } elseif ('-l' === $arg) {
+                $log_level = $argv[++$optind];
+            } elseif ('-y' === $arg) {
+                $runner->confirm_all = true;
+            } elseif ('-g' === $arg) {
+                $runner->set_game($argv[++$optind]);
+            } elseif ('-t' === $arg) {
+                $runner->set_turn($argv[++$optind]);
+            } elseif ('-y' === $arg) {
+                $runner->confirm_all = true;
+            } elseif ('--fakemail' == $arg) {
+                $runner->set_fakemail(true);
+            } else if (str_starts_with($arg, "-")) {
+                if ($verbosity > 0)
+                    echo "unknown option '$arg'\n";
+                $usage = 1;
+            } else {
+                break;
+            }
+            ++$optind;
+        }
+        $runner->set_scriptname($scriptname ?? $argv[0]);
+        if ($usage) {
+            $runner->usage(true, StatusCode::STATUS_NORMAL);
+        }
+
+        $runner->set_verbosity($verbosity);
+
+        $logger = static::get_logger(null, $log_level);
+        $config = $runner->parse_config($configfile);
+        $logger = static::get_logger($config, $log_level);
+
+        if ($config) {
+            $logger->info("Config file '$configfile' read");
+            $logger->debug($config);
         } else {
-            $logger->error("could not access log file '$logfile'");
+            $logger->warning("No config file '$configfile'\n");
         }
-    }
-    return $logger;
-}
+        $logger->debug("Parameters:\n");
+        $logger->debug($argv);
 
-$runner = new EresseaRunner;
+        $pos_args = array_slice($argv, $optind);
 
-$usage = 0;
-$optind = 1;
-$log_level = Logger::INFO;
-$verbosity = 1;
-$scriptname = $_SERVER['PHP_SELF'];
+        $command = $pos_args[0] ?? 'help';
+        array_shift($pos_args);
 
-if (realpath($scriptname) !== false)
-    $configfile = dirname(dirname(realpath($scriptname))) . "/conf/config.php";
-else
-    $configfile = realpath(".") . "/conf/config.php";
-while (isset($argv[$optind])) {
-    $arg = $argv[$optind];
-    if (in_array($arg, ['-h', '--help'])) {
-        $usage = 2;
-    } elseif ('-c' === $arg) {
-        $scriptname = $argv[++$optind];
-    } elseif ('-f' === $arg) {
-        $configfile = $argv[++$optind];
-    } elseif ('-v' === $arg) {
-        $verbosity = $argv[++$optind];
-    } elseif ('-l' === $arg) {
-        $log_level = $argv[++$optind];
-    } elseif ('-y' === $arg) {
-        $runner->confirm_all = true;
-    } elseif ('-g' === $arg) {
-        $runner->set_game($argv[++$optind]);
-    } elseif ('-t' === $arg) {
-        $runner->set_turn($argv[++$optind]);
-    } elseif ('-y' === $arg) {
-        $runner->confirm_all = true;
-    } elseif ('--fakemail' == $arg) {
-        $runner->set_fakemail(true);
-    } else if (str_starts_with($arg, "-")) {
-        if ($verbosity > 0)
-            echo "unknown option '$arg'\n";
-        $usage = 1;
-    } else {
-        break;
-    }
-    ++$optind;
-}
-$runner->set_scriptname($scriptname ?? $argv[0]);
-if ($usage) {
-    $runner->usage(true, StatusCode::STATUS_NORMAL);
-}
+        $logger->info("command $command");
 
-$runner->set_verbosity($verbosity);
-
-$logger = get_logger(null, $log_level);
-$config = $runner->parse_config($configfile);
-$logger = get_logger($config, $log_level);
-
-if ($config) {
-    $logger->info("Config file '$configfile' read");
-    $logger->debug($config);
-} else {
-    $logger->warning("No config file '$configfile'\n");
-}
-$logger->debug("Parameters:\n");
-$logger->debug($argv);
-
-$pos_args = array_slice($argv, $optind);
-
-$command = $pos_args[0] ?? 'help';
-array_shift($pos_args);
-
-$logger->info("command $command");
-
-if ('help' == $command) {
-    $runner->usage(false, StatusCode::STATUS_NORMAL, $pos_args[0] ?? NULL);
-} elseif ('install' == $command) {
-    $runner->cmd_install($pos_args);
-} elseif ('create_config' == $command) {
-    $runner->save_config();
-} else {
-    if (empty($configfile) || !file_exists($configfile)) {
-        $msg = "Config file '$configfile' not found.";
-        $logger->error($msg);
-        if ($verbosity > 0) {
-            $runner->usage(true, false, 'config_not_found');
+        if ('help' == $command) {
+            $runner->usage(false, StatusCode::STATUS_NORMAL, $pos_args[0] ?? NULL);
+        } elseif ('install' == $command) {
+            $runner->cmd_install($pos_args);
+        } elseif ('create_config' == $command) {
+            $runner->save_config();
+        } else {
+            if (empty($configfile) || !file_exists($configfile)) {
+                $msg = "Config file '$configfile' not found.";
+                $logger->error($msg);
+                if ($verbosity > 0) {
+                    $runner->usage(true, false, 'config_not_found');
+                }
+                exit(StatusCode::STATUS_PARAMETER);
+            } elseif ((EresseaRunner::COMMANDS[$command]['std_runner'] ?? false) == true) {
+                $runner->cmd($command, $pos_args);
+            } elseif ('info' == $command) {
+                $runner->cmd_info($configfile, $argv, $pos_args);
+            } else {
+                $msg = "unknown command '$command'";
+                if ($verbosity > 0)
+                    echo "$msg\n";
+                $logger->error($msg);
+                $runner->usage(true, StatusCode::STATUS_PARAMETER);
+            }
         }
-        exit(StatusCode::STATUS_PARAMETER);
-    } elseif ((EresseaRunner::COMMANDS[$command]['std_runner'] ?? false) == true) {
-        $runner->cmd($command, $pos_args);
-    } elseif ('info' == $command) {
-        $runner->cmd_info($configfile, $argv, $pos_args);
-    } else {
-        $msg = "unknown command '$command'";
-        if ($verbosity > 0)
-            echo "$msg\n";
-        $logger->error($msg);
-        $runner->usage(true, StatusCode::STATUS_PARAMETER);
+
     }
+
 }
+
