@@ -184,6 +184,10 @@ TODO
 
 TODO mutt in accept-orders.py
 
+TODO eressea.ini:
+[game]
+dbname = eressea.db
+
 ## Sending report requests
 
 TODO (Reportnachforderung)

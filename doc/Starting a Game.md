@@ -98,7 +98,9 @@ This should create a bunch of files in the `reports` subdirectory. Open them wit
 **!!ERROR** shebang /usr/bin/env python does not work (for compress.sh, sendreport.sh), replace by explicit calls python2 xyz.py instead of ./xyz.py?
 
 This should create a zip file and a .sh bash shell script for every player. That shell script is used to send the email to the players, but we will get to that later.
+
 ### Processing orders
+
 In fact, we will skip the whole step of sending reports to players and receiving orders from them for later. Let's instead look at what happens after we have received them. All player orders will land in one file called `orders.1`, where 1 is the turn number. Lets simulate this by just taking the default orders.
 ```
 cd reports

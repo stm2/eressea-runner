@@ -59,6 +59,12 @@ cd ~/eressea
 git clone https://github.com/eressea/orders-php.git
 ```
 
+## Adding ECheck
+
+If you want to check your players' orders and give them feedback (and we strongly sugest that you do!) you also need an order checker. *The* order checker for eressea is ECheck.
+
+TODO installing echeck
+
 ## Read on
 
 You can now proceed to [[Starting a Game]].
