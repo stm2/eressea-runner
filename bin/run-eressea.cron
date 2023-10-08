@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+
+# usage: run-eressea.cron <game-id>
+
+function abort() {
+    echo "$1"
+    exit 1
+}
+
+[ -z "${1+x}" ] && abort "missing argument <game-id>"
+game=$1
+
+[ -z "${ERESSEA+x}" ] && abort "The ERESSEA environment variable is not set. Aborting."
+
+cd "$ERESSEA"
+echo ./eressea-runner.sh -g "$game" run --all -r

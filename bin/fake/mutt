@@ -55,6 +55,7 @@ echo "$rcfile"
 echo "mutt $*"
 echo "---"
 echo "TO: $email"
+echo "DATE: $(date)"
 echo "SUBJECT: $subject"
 echo "---"  >> "$LOGFILE"
 # print lines 1-5,...,-5-end

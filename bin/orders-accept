@@ -1,5 +1,5 @@
 #!/bin/bash
-# example: orders-accept 2 de < mail.txt
+# usage: orders-accept <subject> < mail.txt
 set -euo pipefail
 
 subject="$1"

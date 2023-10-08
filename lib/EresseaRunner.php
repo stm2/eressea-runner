@@ -84,16 +84,16 @@ class EresseaRunner {
         ],
         'run' => [
             'std_runner' => true,
+            'commandline' => 'run [ --all ] [ --first ] [ -d | -k ]',
             'short' => 'run a turn'
-        ],
-        'run_all' => [
-            'short' => 'do a complete cycle: fetch mail, create-orders, run, send'
         ],
         'announce' => [
             'commandline' => 'announce subject textfile [attachement]...',
             'short' => 'send a message to all players'
         ],
         'backup' => [
+            'std_runner' => true,
+            'commandline' => 'backup [<game-id> <turn>]',
             'short' => 'backup relevant data for this turn'
         ]
     ];
@@ -194,6 +194,19 @@ THE CONFIG FILE
     );
 ?>
 
+EOL,
+
+        'run' => <<<EOL
+Run a turn. Fails if the reports directory already exists.
+
+-r
+    remove the reports directory before running
+-k
+    keep the reports directory (possibly mixing reports from different turns in the report directory).
+--all
+    do a complete cycle: fetch mail, create-orders, run, send
+--first
+    this is the first time (do not create orders)
 EOL,
 
     ];
@@ -368,6 +381,7 @@ EOL,
 
             $out = [];
             $this->call_eressea('', [ '--version' ], $out);
+            $text = '';
             foreach($out as $line)
                 $text .= $line;
 
@@ -376,13 +390,11 @@ EOL,
             $this->info("eressea not configured");
         }
 
-        $out = $this->exec('echecks -V', null, false);
+        $out = $this->exec('echeck -V', null, false);
         $text='';
         foreach($out as $line)
             $text .= $line;
         $this->info("echeck: $text");
-        $this->info("PATH" . getenv("PATH"));
-
 
     }
 
@@ -499,6 +511,11 @@ EOL,
             $this->debug($line);
 
         if ($result != 0) {
+            if ($exitonfailure) {
+                foreach ($out as $line) {
+                    echo "$line\n";
+                }
+            }
             $this->abort(empty($error_msg)?"$cmd exited abnormally.\n":$error_msg, $exitonfailure?StatusCode::STATUS_EXECUTION:StatusCode::STATUS_GOOD);
         }
 
@@ -621,6 +638,7 @@ EOL,
 locales = de,en
 id      = %s
 start   = %d
+dbname  = eressea.db
 
 [lua]
 install = %s
@@ -765,6 +783,7 @@ EOF;
             } else {
                 $this->info("Copying auto.dat to $turn.dat");
                 copy('data/auto.dat', "data/$turn.dat");
+                touch('orders.$turn');
             }
 
         }
@@ -1065,8 +1084,8 @@ EOF;
     const SET_ERESSEA_PATTERN = "/ERESSEA=(.*)/";
     const SET_FETCHMAILRC_PATTERN = "/FETCHMAILRC=(.*)/";
     const TIME_PATTERN = "(([^\s])+[ \t]+([^\s])+[ \t]+([^\s])+[ \t]+([^\s])+[ \t]+([^\s])+)";
-    // 15 21 * * Sat        $ERESSEA/server/bin/run-eressea.cron 1
-    const RUNNER_LINE = "1 1 1 1 1    \$ERESSEA/server/bin/run-eressea.cron 999";
+    // 15 21 * * Sat        $ERESSEA/eressea-runner.sh -g 1
+    const RUNNER_LINE = "1 1 1 1 1    \$ERESSEA/bin/run-eressea.cron 999";
     const RUNNER_PATTERN = "[ \t]+((.*run-eressea.cron\s+)([A-Za-z0-9]*)(.*))";
     //*/15 * * * *          $ERESSEA/server/bin/orders.cron 1
     const CHECKER_LINE = "1 1 1 1 1    \$ERESSEA/bin/orders.cron 999";
@@ -1201,7 +1220,7 @@ EOF;
         if (!empty($cron_info['fetchmail'])) {
             $this->info("Fetchmail installed:");
             if (count($cron_info['fetchmail']) > 1) {
-                $this->warn('More than one fetchmail line!');
+                $this->error('More than one fetchmail line!');
             }
             if ($clear) {
                 $this->info("disabling");
@@ -1411,6 +1430,7 @@ EOF;
                 }
             }
         }
+        putenv("HOME=$oldhome");
     }
 
     function cmd_fetch($pos_args) {
@@ -1456,7 +1476,6 @@ EOF;
         $this->goto_game();
         $turn = $this->get_current_turn();
 
-
         if (!is_dir("orders.dir") || empty(glob("orders.dir/turn-*")))
             $this->abort("no orders in orders.dir", StatusCode::STATUS_EXECUTION);
 
@@ -1470,16 +1489,64 @@ EOF;
 
     }
 
-    function cmd_run() {
+    function cmd_run($pos_args) {
+        $first = false;
+        $all = false;
+        $keep = false;
+        $remove = false;
+        foreach($pos_args as $arg) {
+            if ("-k" == $arg) {
+                $keep = true;
+            } else if ("-r" == $arg) {
+                $remove = true;
+            } else if ("--all" == $arg) {
+                $all = true;
+            } else if ("--first" == $arg) {
+                $first = true;
+            }
+        }
+
         $this->goto_game();
         $game = $this->game_id;
         $turn = $this->get_current_turn();
 
-        if (!is_file("orders.$turn"))
-            $this->abort("no order file orders.$turn", StatusCode::STATUS_EXECUTION);
+        if (!file_exists("data/$turn.dat")) {
+            $this->abort("data file game-$game/data/$turn.dat is missing", StatusCode::STATUS_EXECUTION);
+        }
+        if (file_exists('reports') && !$keep && !$remove) {
+            $this->abort("Report directory game-$game/reports exists. Use -r to delete or -k to ignore.", StatusCode::STATUS_PARAMETER);
+        }
+
+        if ($all) {
+            if (!$first) {
+                // $this->cmd_fetch([ '--once' ]);
+                if (file_exists("orders.$turn"))
+                    $this->abort("game-$game/orders.$turn already exists", StatusCode::STATUS_EXECUTION);
+                $this->cmd_create_orders([]);
+            }
+        }
+
+        if ($first)
+            touch("orders.$turn");
+        if (!$first && !is_file("orders.$turn")){
+            $this->abort("order file game-$game/orders.$turn is missing", StatusCode::STATUS_EXECUTION);
+        }
 
         // TODO check NMRs
+
+        $this->cmd_backup([]);
+
+        if (file_exists('reports')) {
+            if (!$keep && $remove) {
+                $this->exec("rm -rf reports");
+                mkdir("reports");
+            }
+        } else {
+            mkdir("reports");
+        }
+
         $out = [];
+        $this->info("running turn $turn for game $game");
         $this->call_eressea('./scripts/run-turn.lua', [ '-t', "$turn", '-l', '5' ], $out);
         $text = "";
         foreach($out as $line)
@@ -1487,11 +1554,56 @@ EOF;
 
         $this->info("$text\n");
 
-        // $this->call_script("run-turn", [ $this->game_id, $turn ]);
-
-        if (!file_exists("log/eressea.log.$game.$turn"))
+        if (!file_exists("../log/eressea.log.$game.$turn"))
             link("eressea.log", "../log/eressea.log.$game.$turn");
+
+        if (!file_exists("reports/reports.txt")) {
+            $this->error("no reports created");
+        } else {
+            if (!file_exists("eressea.db")) {
+                $this->error("eressea.db does not exist. You should add a line 'dbname=eressea.db' to your eressa.ini");
+            }
+            $this->cmd_backup([]);
+        }
+
+        if ($all && file_exists("reports/reports.txt")) {
+            $this->info("sending reports for game $game, turn $turn");
+            $this->cmd_send([]);
+            $this->cmd_backup([ $game, $turn + 1 ]);
+        }
     }
+
+    function cmd_backup(array $pos_args) : void {
+        $this->goto_game();
+        $game=$this->game_id;
+        $turn = $this->get_current_turn();
+        if (!empty($pos_args)) {
+            if (count($pos_args) != 2)
+                $this->abort("wrong number of arguments. backup <game-id> <turn>", STATUS_PARAMETER);
+            $game = $pos_args[0];
+            $turn = $pos_args[1];
+            if (intval($turn) != $turn || intval($turn) < 0) {
+                $this->abort("<turn> must be a non-negative integer (got $turn)", StatusCode::STATUS_PARAMETER);
+            }
+        }
+        if ($turn == -1) {
+            $this->abort("No turn specified.", StatusCode::STATUS_PARAMETER);
+        }
+
+        $base = $this->get_base_directory();
+        putenv("ERESSEA=$base");
+        $this->info("backing up game $game, turn $turn");
+        $out = $this->exec("$base/bin/backup.sh '$game' $turn", null, false, $result);
+        if ($result != 0) {
+            $this->abort("backup error", StatusCode::STATUS_EXECUTION);
+        }
+        $text='';
+        foreach($out as $line)
+            $text .= $line . "\n";
+        $this->debug($text);
+    }
+
+
 
     private function backup_file(string $filename) : string {
         for($i = 0; ; ++$i) {
