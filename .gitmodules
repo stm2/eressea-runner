@@ -8,3 +8,6 @@
 [submodule "lib/analog"]
 	path = lib/analog
 	url = https://github.com/jbroadway/analog.git
+[submodule "echeck"]
+	path = echeck
+	url = https://github.com/eressea/echeck.git
