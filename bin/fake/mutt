@@ -16,7 +16,7 @@ done
 BASE=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 
 LOGFILE=$BASE/../../log/fakemail.log
-if [[ $(find "$LOGFILE" -size +10M -print) ]]; then
+if [[ -n "$(find "$LOGFILE" -size +10M -print 2> /dev/null)" ]]; then
   mv -f "$LOGFILE" "$LOGFILE~"
 fi
 

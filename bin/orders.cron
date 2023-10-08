@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+
+# orders.cron <game-id> [<game-id>]...
+## this script processes incoming order files.
+# files are delivered into an incoming queue by procmail, then cron runs
+# this here script to make a non-blocking syntax check and reject or
+# accept the order file.
+
+if [ -z "${ERESSEA+x}" ] ; then
+  echo "The ERESSEA environment variable is not set. Aborting."
+  exit 1
+fi
+
+cd "$ERESSEA"
+for GAME in "$@"
+do
+  orders-php/check-orders.sh -m "$ERESSEA/etc/.muttrc" "$GAME"
+done

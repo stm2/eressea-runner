@@ -6,13 +6,13 @@ enum StatusCode : int {
     /** do not exit */
     case STATUS_GOOD = -1;
     /** no error */
-    const STATUS_NORMAL = 0;
+    case STATUS_NORMAL = 0;
     /** command line error */
-    const STATUS_PARAMETER = 1;
+    case STATUS_PARAMETER = 1;
     /** unspecified error */
-    const STATUS_ERROR = 2;
+    case STATUS_ERROR = 2;
     /** error during execution */
-    const STATUS_EXECUTION = 3;
+    case STATUS_EXECUTION = 3;
 }
 
 
@@ -244,7 +244,7 @@ EOL,
         return "    $cline" . $this->line_break($cinfo['short'], '        ');
     }
 
-    function usage(bool $short = true, int $exit = NULL, string $command = NULL) : void {
+    function usage(bool $short = true, StatusCode $exit = NULL, string $command = NULL) : void {
         $name = $this->scriptname;
 
         if ($command == NULL) {
@@ -288,7 +288,7 @@ EOL,
         }
 
         if ($exit !== NULL) {
-            exit($exit);
+            exit($exit->value);
         }
     }
 
@@ -471,7 +471,7 @@ EOL,
         }
 
         $input = readline($lines[count($lines)-1] . " [$value] ");
-        if (!empty($input))
+        if ($input !== '' and $input !== false)
             $value = $input;
         return $input !== false;
     }
@@ -1076,7 +1076,7 @@ EOF;
     const FETCHMAIL_PATTERN = "[ \t]+(.*fetchmail.*)";
 
     function analyze_crontab($runner_pattern, $checker_pattern) : array {
-        $out = $this->exec("crontab -l");
+        $out = $this->exec("crontab -l", null, false);
 
         $info = [ 'crontab' => $out, 'runners' => [], 'checkers' => [], 'fetchmail' => [], 'other' => [] ];
         $l=0;
@@ -1216,7 +1216,7 @@ EOF;
         if (!$clear && $this->confirm("Schedule new server run?")) {
             do {
                 $this->input("Game ID", $id);
-            } while (empty($id));
+            } while ($id === '' or $id === false or $id === null);
 
             $mode = 'w';
             $this->input("Run weekly (w), daily (d), every n minutes (m) or input manually (i)?", $mode);
@@ -1730,7 +1730,7 @@ EOF;
                 $msg = "Config file '$configfile' not found.";
                 $logger->error($msg);
                 if ($verbosity > 0) {
-                    $runner->usage(true, false, 'config_not_found');
+                    $runner->usage(true, StatusCode::STATUS_EXECUTION, 'config_not_found');
                 }
                 exit(StatusCode::STATUS_PARAMETER);
             } elseif ((EresseaRunner::COMMANDS[$command]['std_runner'] ?? false) == true) {
