@@ -4,7 +4,8 @@
 	branch = test_server
 [submodule "orders-php"]
 	path = orders-php
-	url = https://github.com/eressea/orders-php.git
+	url = https://github.com/stm2/orders-php.git
+	branch = stm/test_server
 [submodule "lib/analog"]
 	path = lib/analog
 	url = https://github.com/jbroadway/analog.git
