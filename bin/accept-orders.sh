@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: orders-accept <subject> < mail.txt
+# usage: accept-orders <subject> < mail.txt
 set -euo pipefail
 
 subject="$1"
@@ -24,7 +24,7 @@ suffix=${parts[3]}
 game=${parts[2]}
 gamedir="$ERESSEA/game-$game"
 
-logfile=$ERESSEA/log/orders-accept.log
+logfile=$ERESSEA/log/accept-orders.log
 echo "$(date) '$gamename' '$game' '$suffix' '$lang'" >> "$logfile"
 
 

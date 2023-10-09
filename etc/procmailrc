@@ -9,4 +9,4 @@ LOGFILE=$MAILDIR/from   #recommended
 # $ERESSEA
 :0
 * $^Subject:\/.* (BEFEHL|ORDER).*
-| grep -v '>From' | $ERESSEA/bin/orders-accept "$MATCH"
+| grep -v '>From' | $ERESSEA/bin/accept-orders.sh "$MATCH"

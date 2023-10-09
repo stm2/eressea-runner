@@ -13,10 +13,10 @@ FETCHMAILRC=%s
 # run the server for game 1 at 9:15 pm every Saturday
 # add one line for every game you might be running
 # remove the # in the following line to activate
-#15 21 * * Sat        $ERESSEA/server/bin/run-eressea.cron 1
+#15 21 * * Sat        $ERESSEA/bin/run-eressea.cron 1
 
 # run order confirmation for game 1 every 15 minutes
-#*/15 * * * *          $ERESSEA/server/bin/orders.cron 1
+#*/15 * * * *          $ERESSEA/bin/check-orders.cron 1
 
 
 # m h  dom mon dow   command

@@ -1084,12 +1084,12 @@ EOF;
     const SET_ERESSEA_PATTERN = "/ERESSEA=(.*)/";
     const SET_FETCHMAILRC_PATTERN = "/FETCHMAILRC=(.*)/";
     const TIME_PATTERN = "(([^\s])+[ \t]+([^\s])+[ \t]+([^\s])+[ \t]+([^\s])+[ \t]+([^\s])+)";
-    // 15 21 * * Sat        $ERESSEA/eressea-runner.sh -g 1
+    // 15 21 * * Sat        $ERESSEA/bin/run-eressea.cron -g 1
     const RUNNER_LINE = "1 1 1 1 1    \$ERESSEA/bin/run-eressea.cron 999";
     const RUNNER_PATTERN = "[ \t]+((.*run-eressea.cron\s+)([A-Za-z0-9]*)(.*))";
-    //*/15 * * * *          $ERESSEA/server/bin/orders.cron 1
-    const CHECKER_LINE = "1 1 1 1 1    \$ERESSEA/bin/orders.cron 999";
-    const CHECKER_PATTERN = "[ \t]+((.*orders.cron\s+)([A-Za-z0-9]*)(.*))";
+    //*/15 * * * *          $ERESSEA/bin/check-orders.cron 1
+    const CHECKER_LINE = "1 1 1 1 1    \$ERESSEA/bin/check-orders.cron 999";
+    const CHECKER_PATTERN = "[ \t]+((.*check-orders.cron\s+)([A-Za-z0-9]*)(.*))";
     // 00 *  * * *         [ -f $FETCHMAILRC ] && fetchmail --quit -f $FETCHMAILRC >> $ERESSEA/log/fetchmail.log 2>&1
     const FETCHMAIL_LINE = "* */1 * * *    [ -f \$FETCHMAILRC ] && fetchmail --quit -f \$FETCHMAILRC >> \$ERESSEA/log/fetchmail.log 2>&1";
     const FETCHMAIL_PATTERN = "[ \t]+(.*fetchmail.*)";

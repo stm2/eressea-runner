@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# usage: orders.cron <game-id> [<game-id>]...
+# usage: check-orders.cron <game-id> [<game-id>]...
 ## this script processes incoming order files.
 # files are delivered into an incoming queue by procmail, then cron runs
 # this here script to make a non-blocking syntax check and reject or
