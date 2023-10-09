@@ -1387,6 +1387,10 @@ EOF;
             $filename = "$basedir/etc/crontab.installed";
             file_put_contents($filename, $tab);
             $this->exec("crontab $filename");
+        } else {
+            $filename = $this->get_base_directory() . "/etc/crontab." . time();
+            file_put_contents($filename, $tab);
+            $this->info("crontab saved to $filename");
         }
 
     }
