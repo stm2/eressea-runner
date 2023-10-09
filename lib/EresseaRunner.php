@@ -88,6 +88,7 @@ class EresseaRunner {
             'short' => 'run a turn'
         ],
         'announce' => [
+            'std_runner' => true,
             'commandline' => 'announce subject textfile [attachement]...',
             'short' => 'send a message to all players'
         ],
@@ -1603,7 +1604,115 @@ EOF;
         $this->debug($text);
     }
 
+    function get_game_setting(array $path) : mixed {
+        if (count($path) != 2)
+            $this->abort("internal error get_game_setting " + implode(',', $path));
+        $gameid = $this->game_id;
+        $eressea_ini = parse_ini_file($this->get_game_directory($gameid) . "/eressea.ini");
+        if ($eressea_ini === false) {
+            $this->abort("could not read in file game-$gameid/eressea.ini");
+        }
+        return $eressea_ini[$path[0]][$path[1]] ?? null;
+    }
 
+    private function absolute_path(string $filename, int $gameid = null) : string {
+        if (strpos($filename, "/") !== 0) {
+            $filename = $this->get_game_directory($gameid) . '/' . $filename;
+        }
+        return $filename;
+    }
+
+    private function send_mail(string $subject, string $bodyfile, array $attachements, array $toaddrs, bool $copy_to_server = true) {
+        $this->check_email();
+        $muttrc = escapeshellarg($this->config['runner']['muttrc']);
+        $subject_par = escapeshellarg($subject);
+        $attachpar = '';
+        foreach($attachements as $att) {
+            $attachpar .= ' ' . escapeshellarg($att);
+        }
+        if (!empty($attachpar)) {
+            $attachpar = "-a$attachpar";
+        } else {
+            $attachpar = '';
+        }
+        $bodyfile = escapeshellarg($bodyfile);
+
+        $delay = $this->config['runner']['mass_mail_delay'] ?? 2;
+        $addr_count = count($toaddrs);
+        $this->info("sending to $addr_count recipients...");
+        foreach($toaddrs as $addr) {
+            $addr = escapeshellarg($addr);
+
+            //     echo "mutt -F $muttrc -s $subject_par $attachpar -- $addr < $bodyfile\n";
+            $this->exec("mutt -F $muttrc -s $subject_par $attachpar -- $addr < $bodyfile");
+            sleep($delay);
+        }
+        if ($copy_to_server) {
+            $out = $this->exec("mutt -F $muttrc -Q from");
+            $server = $out[0] ?? '';
+            $subject_par = escapeshellarg("$subject [$addr_count messages sent]");
+
+            if (strpos($server, 'from="') === 0) {
+                $server = escapeshellarg(substr($server, 6, -1));
+                //     echo "mutt -F $muttrc -s $subject_par $attachpar -- $server < $bodyfile";
+                $this->exec("mutt -F $muttrc -s $subject_par $attachpar -- $server < $bodyfile");
+            } else {
+                $this->debug("could not find server from address ($server)");
+            }
+        }
+        $this->info("done sending");
+    }
+
+    function cmd_announce(array $pos_args) : void {
+        $this->goto_game();
+        $gameid = $this->game_id;
+        if (count($pos_args) < 2) {
+            $this->abort("missing arguments <subject> <text file>", StatusCode::STATUS_PARAMETER);
+        }
+        $subject = $pos_args[0];
+        if (empty($subject)) {
+            $gamename = $this->get_game_setting(['game', 'name']);
+            if (empty($gamename)) {
+                $subject =  "Game $gameid Announce";
+            } else {
+              $subject =  "$gamename ($gameid) Announce";
+            }
+        }
+        $bodyfile = $this->absolute_path($pos_args[1], $gameid);
+
+        $attachements = [];
+        for($i = 2; $i < count($pos_args); ++$i) {
+            $filename = $this->absolute_path($pos_args[$i], $gameid);
+            if (!is_file($filename)) {
+                $this->abort("attachement $filename not found", StatusCode::STATUS_PARAMETER);
+            }
+            $attachements[] = $filename;
+        }
+
+        if (!file_exists($bodyfile) || !is_file($bodyfile)) {
+            $this->abort("Body $bodyfile not found", StatusCode::STATUS_PARAMETER);
+        }
+
+        if (!is_file('passwd')) {
+            $this->abort("passwd file not found. Have you created reports?", StatusCode::STATUS_EXECUTION);
+        }
+
+        $players = [];
+        foreach(file('passwd') as $line) {
+            $addr = explode(':', $line, 3)[1];
+            if (!empty($addr))
+                $players[] = $addr;
+        }
+        if (empty($players))
+            $this->abort("not players found in passwd file", StatusCode::STATUS_EXECUTION);
+
+        $this->confirm("Send announce $subject\n  with $bodyfile\n  and attachments '" .
+            implode(', ', $attachements) . "'\n  to " .
+            ((count($players) < 5 ? implode(', ', $players) :
+                (implode(', ', array_slice($players, 0, 3)) . ", ... + " . (count($players) - 3))) .
+            '?'));
+        $this->send_mail($subject, $bodyfile, $attachements, $players);
+    }
 
     private function backup_file(string $filename) : string {
         for($i = 0; ; ++$i) {
