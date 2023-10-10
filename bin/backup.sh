@@ -59,4 +59,4 @@ for file in "${files[@]}"; do
 done
 
 echo "backup turn $TURN, game $GAME, files: ${existing[*]}"
-tar --no-auto-compress -cjf "backup/$TURN.tar.bz2" "${existing[@]}"
+tar cjf "backup/$TURN.tar.bz2" "${existing[@]}"

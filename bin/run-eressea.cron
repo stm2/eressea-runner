@@ -14,4 +14,4 @@ game=$1
 [ -z "${ERESSEA+x}" ] && abort "The ERESSEA environment variable is not set. Aborting."
 
 cd "$ERESSEA"
-echo ./eressea-runner.sh -g "$game" run --all -r
+./eressea-runner.sh -g "$game" run --all -r

@@ -1,11 +1,11 @@
 # insert your provider's pop3 server, user name and password
 
-set logfile "%s/log/fetchmail.log"
-set idfile "%s/etc/.fetchids"
+set logfile "<basepath>/log/fetchmail.log"
+set idfile "<basepath>/etc/.fetchids"
 
 set daemon 120
 
-poll %s protocol %s service %d with :
-     user %s password %s with:
+poll <servername> protocol <IMAP/POP3> service <port> with :
+     user <username> password <pw> with:
      ssl and sslproto "auto" and keep and:
-     mda "/usr/bin/procmail -m ERESSEA=%s %s/etc/procmailrc"
+     mda "/usr/bin/procmail -m ERESSEA=<basepath> <basepath>/etc/procmailrc"

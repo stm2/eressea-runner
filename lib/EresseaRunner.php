@@ -84,7 +84,7 @@ class EresseaRunner {
         ],
         'run' => [
             'std_runner' => true,
-            'commandline' => 'run [ --all ] [ --first ] [ -d | -k ]',
+            'commandline' => 'run [ --all ] [ --first ] [ -r | -k ]',
             'short' => 'run a turn'
         ],
         'announce' => [
@@ -592,6 +592,7 @@ EOL,
             $this->abort($msg, StatusCode::STATUS_NORMAL);
         }
 
+        // TODO
         if ($this->check_email(false)) {
             $this->info("stopping fetchmail");
             $this->cmd_fetch([ "--quit" ]);
@@ -620,6 +621,10 @@ EOL,
         $this->exec("s/runtests");
 
         $this->exec("s/install -f");
+
+        $this->chdir("$base/orders-php");
+
+        $this->exec("make install");
 
         // $this->config['runner']['serverdir'] = $installdir;
         $this->config['runner']['gamedir'] = $gamedir;
@@ -990,6 +995,21 @@ EOF;
         return false;
     }
 
+    const FETCHMAIL_TEMPLATE=<<<EOT
+# insert your provider's pop3 server, user name and password
+
+set logfile %s
+set idfile %s
+
+set daemon 120
+
+poll %s protocol %s service %d with :
+     user %s password %s with:
+     ssl and sslproto "auto" and keep and:
+     mda "/usr/bin/procmail -m ERESSEA=%s %s"
+
+EOT;
+
     function install_mail(?array $pos_args = null) : void {
         $home=getenv("HOME");
         $xdgc=getenv("XDG_CONFIG_HOME");
@@ -1120,20 +1140,21 @@ EOF;
         if ($template == false)
             $this->abort("template file $templatefile not found", StatusCode::STATUS_EXECUTION);
 
+        // TODO
         $this->info("stopping fetchmail");
         $this->cmd_fetch([ "--quit" ]);
 
         $okey = file_put_contents($fetchmailrc,
                     sprintf($template,
-                        escapeshellarg($basedir),
-                        escapeshellarg($basedir),
+                        escapeshellarg("$basedir/log/fetchmail.log"),
+                        escapeshellarg("$basedir/etc/.fetchids"),
                         escapeshellarg($protocol_server),
                         $protocol,
                         intval($protocol_port),
                         escapeshellarg($protocol_user),
                         escapeshellarg($protocol_pw),
                         escapeshellarg($basedir),
-                        escapeshellarg($basedir)
+                        escapeshellarg("$basedir/etc/procmailrc")
                     ));
         chmod($fetchmailrc, 0700);
         if ($okey === false)
@@ -1600,7 +1621,7 @@ EOF;
 
         if ($all) {
             if (!$first) {
-                // $this->cmd_fetch([ '--once' ]);
+                $this->cmd_fetch([ '--once' ]);
                 if (file_exists("orders.$turn"))
                     $this->abort("game-$game/orders.$turn already exists", StatusCode::STATUS_EXECUTION);
                 $this->cmd_create_orders([]);
