@@ -592,8 +592,10 @@ EOL,
             $this->abort($msg, StatusCode::STATUS_NORMAL);
         }
 
-        $this->info("stopping fetchmail");
-        $this->cmd_fetch([ "--quit" ]);
+        if ($this->check_email(false)) {
+            $this->info("stopping fetchmail");
+            $this->cmd_fetch([ "--quit" ]);
+        }
 
         // does not work:
         // $this->exec("cd $basedir/eressea-source");
@@ -901,7 +903,7 @@ EOF;
         }
     }
 
-    function check_email() : bool {
+    function check_email(bool $abort = true) : bool {
         if (isset($this->config['runner']['muttrc'])) {
             if ($this->fakemail) {
                 $path = getenv("PATH");
@@ -913,7 +915,9 @@ EOF;
             return true;
         }
 
-        $this->abort("E-mail is not configured. Please set it up with the command install_mail.", StatusCode::STATUS_EXECUTION);
+        if ($abort)
+            $this->abort("E-mail is not configured. Please set it up with the command install_mail.", StatusCode::STATUS_EXECUTION);
+        return false;
     }
 
     function install_mail(?array $pos_args = null) : void {
@@ -1036,6 +1040,8 @@ EOF;
                         escapeshellarg($mailfolder)));
         if ($okey === false)
             $this->abort("could not write to $muttrc", StatusCode::STATUS_EXECUTION);
+
+        $this->config['runner']['muttrc'] = $muttrc;
 
         $templatefile = "$basedir/etc/fetchmailrc.template";
         if (!file_exists($templatefile))
