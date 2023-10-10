@@ -745,12 +745,47 @@ EOF;
 
     function cmd_seed(array $pos_args) : void {
         $this->goto_game();
+        $gamedir = $this->get_game_directory($this->game_id);
 
         $pos = 0;
         $replace = false;
         if (isset($pos_args[$pos]) && $pos_args[$pos] == '-r') {
             $replace = true;
             $pos++;
+        }
+
+        $factions_found = false;
+        if (file_exists('newfactions')) {
+            foreach(file('newfactions') as $line)
+                if (strpos($line, '#') !== 0) {
+                    $factions_found = true;
+                    break;
+                }
+        }
+        if (!$factions_found) {
+            if ($this->confirm("No factions found in '$gamedir/newfactions'. Would you like to enter them manually?")) {
+                $lines = '';
+                $line = '';
+                $invalid='';
+                while ($this->input("${invalid}Enter faction. <email> <race> <language> separated by spaces. Stop with empty line: ", $line) && !empty($line)) {
+                    if (!empty($line)) {
+                        if (preg_match('/^[^\s]+\s+[^\s]+\s+[^\s+].*$/', $line) == 1) {
+                            $lines .= "$line\n";
+                            $line ='';
+                            $invalid='';
+                        } else {
+                            $invalid="Invalid line. ";
+                        }
+                    }
+                }
+                if (!empty($lines)) {
+                    file_put_contents('newfactions', static::NEWFACTIONS_TEMPLATE . "\n" . $lines);
+                    $factions_found = true;
+                }
+            }
+        }
+        if (!$factions_found && !$this->confirm("No factions. Continue anyway?")) {
+            return;
         }
 
         $algo = $pos_args[$pos] ?? "spiral";
@@ -760,7 +795,7 @@ EOF;
             $config = $this->parse_json($configfile);
             if ($config['algo'] != null && isset($pos_args[0]) && $config['algo'] != $algo) {
                 $backup = $this->backup_file($configfile);
-                $this->info('Found existing autoseed.json file that does not match ' . $algo .
+                $this->info("Found existing $gamedir/autoseed.json file that does not match " . $algo .
                     ".\nMoving existing file to $backup.");
                 $config = [];
             }
@@ -1524,7 +1559,7 @@ EOF;
         if (!file_exists("data/$turn.dat")) {
             $this->abort("data file game-$game/data/$turn.dat is missing", StatusCode::STATUS_EXECUTION);
         }
-        if (file_exists('reports') && !$keep && !$remove) {
+        if (file_exists('reports') && (new FilesystemIterator('reports'))->valid() && !$keep && !$remove) {
             $this->abort("Report directory game-$game/reports exists. Use -r to delete or -k to ignore.", StatusCode::STATUS_PARAMETER);
         }
 
