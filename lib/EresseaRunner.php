@@ -636,19 +636,6 @@ EOL,
         }
     }
 
-    const INI_TEMPLATE = <<<EOF
-[game]
-locales = de,en
-id      = %s
-start   = %d
-dbname  = eressea.db
-
-[lua]
-install = %s
-rules   = %s
-
-EOF;
-
     const NEWFACTIONS_TEMPLATE = <<<EOF
 # this file is read by gmtool
 # add one line per faction
@@ -658,7 +645,9 @@ EOF;
 #enno@eressea.test cat de
 EOF;
 
-    function cmd_game(array $pos_args) : void{
+    function cmd_game(array $pos_args) : void {
+        $rules = "e2";
+
         $gamedir = $this->get_game_directory();
         $this->chdir($gamedir);
 
@@ -672,20 +661,42 @@ EOF;
                 }
             }
         }
+
+        $start = $this->turn;
+        $name = '';
+        $sender = '';
+        $email = '';
+
+        for($i = 0; $i < count($pos_args); ++$i) {
+            $arg = $pos_args[$i];
+            if ("--game" == $arg) {
+                $game_id = $pos_args[++$i] ?? null;
+                $gamesub = "game-$game_id";
+            } else if ("--rules" == $arg) {
+                $rules = $pos_args[++$i] ?? null;
+            } else if ("--start" == $arg) {
+                $start = $pos_args[++$i] ?? null;
+            } else if ("--name" == $arg) {
+                $name = $pos_args[++$i] ?? null;
+            } else if ("--sender" == $arg) {
+                $sender = $pos_args[++$i] ?? null;
+            } else if ("--email" == $arg) {
+                $email = $pos_args[++$i] ?? null;
+            } else {
+                $this->abort("unknown argument $arg", StatusCode::STATUS_PARAMETER);
+            }
+        }
+
         if (preg_match(static::GAME_ID_PATTERN, $game_id) !== 1)
             $this->abort("Invalid game ID '$game_id'", StatusCode::STATUS_EXECUTION);
+        $this->game_id = $game_id;
 
         if (file_exists("$gamedir/$gamesub")) {
             $this->abort("Game dir " . realpath("$gamedir/$gamesub") . " already exists", StatusCode::STATUS_EXECUTION);
         }
 
-        $turn = $this->turn;
-        if ($turn < 0)
-            $turn = 0;
-
-        $rules = "e2";
-        if (!empty($pos_args[0]))
-            $rules = $pos_args[0];
+        if ($start < 0)
+            $start = 0;
 
         if (!preg_match("/^[A-Za-z0-9_.-]*\$/", $rules))
             $this->abort("Invalid ruleset '$rules'", StatusCode::STATUS_PARAMETER);
@@ -695,18 +706,42 @@ EOF;
         if (!file_exists($configfile))
             $this->abort("Cannot find config $configfile", StatusCode::STATUS_PARAMETER);
 
+        if ((empty($name) || empty($email)) &&
+            !$this->confirm("We strongly suggest to use the --name and --email parameters. Continue?")) {
+            $this->abort("", StatusCode::STATUS_PARAMETER);
+        }
 
-        if (!$this->confirm("Create game with rules $rules in '$gamesub'?"))
-            exit(StatusCode::STATUS_NORMAL);
+        if (!$this->confirm("Create game $name ($game_id) for $sender <$email> with rules $rules in '$gamesub'?"))
+            $this->abort("", StatusCode::STATUS_NORMAL);
 
         mkdir($gamesub);
         $this->chdir($gamesub);
         mkdir("data");
         mkdir("reports");
 
-        file_put_contents("eressea.ini",
-            sprintf(static::INI_TEMPLATE, $game_id, $turn, $serverdir, $rules));
-        file_put_contents("turn", "$turn");
+        $eressea_ini = [
+          'game' => [
+            'locales' => 'de/en',
+            'id' => "$game_id",
+            'start' => $start,
+            'dbname' => 'eressea.db',
+          ],
+          'lua' => [
+            'install' => "$serverdir",
+            'rules' => 'e2',
+          ],
+        ];
+
+        if (!empty($name))
+            $eressea_ini['game']['name'] = $name;
+        if (!empty($sender))
+            $eressea_ini['game']['sender'] = $sender;
+        if (!empty($email))
+            $eressea_ini['game']['email'] = $email;
+
+        $this->put_ini_file('eressea.ini', $eressea_ini);
+
+        file_put_contents("turn", "$start");
         file_put_contents("newfactions", static::NEWFACTIONS_TEMPLATE);
         symlink("$serverdir/bin/eressea", "eressea");
         symlink("$serverdir/scripts", "scripts");
@@ -1649,15 +1684,46 @@ EOF;
         $this->debug($text);
     }
 
-    function get_game_setting(array $path) : mixed {
+    private function put_ini_file($file, $array, $i = 0){
+        $str="";
+        foreach ($array as $k => $v){
+        if (is_array($v)){
+            $str.=str_repeat(" ",$i*2)."[$k]".PHP_EOL;
+            $str.=$this->put_ini_file("",$v, $i+1);
+        } else
+            $str.=str_repeat(" ",$i*2)."$k = $v".PHP_EOL;
+        }
+        if($file)
+            return file_put_contents($file,$str);
+        else
+            return $str;
+    }
+
+    private function get_game_setting(array $path) : mixed {
         if (count($path) != 2)
             $this->abort("internal error get_game_setting " + implode(',', $path));
         $gameid = $this->game_id;
-        $eressea_ini = parse_ini_file($this->get_game_directory($gameid) . "/eressea.ini");
+        $inifile = $this->get_game_directory($gameid) . "/eressea.ini";
+        $eressea_ini = parse_ini_file($inifile, true);
         if ($eressea_ini === false) {
             $this->abort("could not read in file game-$gameid/eressea.ini");
         }
         return $eressea_ini[$path[0]][$path[1]] ?? null;
+    }
+
+    private function set_game_setting(array $path, mixed $value) : mixed {
+        if (count($path) != 2)
+            $this->abort("internal error get_game_setting " + implode(',', $path));
+        $gameid = $this->game_id;
+        $inifile = $this->get_game_directory($gameid) . "/eressea.ini";
+        $eressea_ini = parse_ini_file($inifile, true);
+        if ($eressea_ini === false) {
+            $this->abort("could not read in file game-$gameid/eressea.ini");
+        }
+        $oldValue = $eressea_ini[$path[0]][$path[1]] ?? null;
+        $eressea_ini[$path[0]][$path[1]] = $value;
+        $this->put_ini_file($inifile, $eressea_ini);
+        return $oldValue;
     }
 
     private function absolute_path(string $filename, int $gameid = null) : string {
