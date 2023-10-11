@@ -29,7 +29,7 @@ fi
 # myid=$(id -u)
 # RUNNING=$(pgrep -u "$myid" -x fetchmail || true)
 if [ -z "$once" ]; then
-    fetchmail -f "$1" || [[ $? -eq 1 ]]
+    fetchmail --quit -f "$1" || [[ $? -eq 1 ]]
 else
-    fetchmail "$once" -f "$1" || [[ $? -eq 1 ]]
+    fetchmail --quit "$once" -f "$1" || [[ $? -eq 1 ]]
 fi
