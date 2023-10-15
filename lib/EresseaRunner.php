@@ -1399,7 +1399,13 @@ EOT;
             break;
 
             case 'i':
-                $time = get_time($time);
+                $time = "* * * * *";
+                $this->input("Enter a time string (see man 5 crontab for how this works)", $time);
+                while ($time == "* * * * *" || preg_match('/' . static::TIME_PATTERN . '/', $time) !== 1) {
+                    $this->input("Invalid time (see 'man 5 crontab' for how this works)", $time);
+                }
+
+                $runner = [ 'time' => $time, 'new' => true, 'id' => $id ];
 
             break;
             }
