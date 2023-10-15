@@ -869,7 +869,7 @@ EOF;
             } else {
                 $this->info("Copying auto.dat to $turn.dat");
                 copy('data/auto.dat', "data/$turn.dat");
-                touch('orders.$turn');
+                touch("orders.$turn");
             }
 
         }
