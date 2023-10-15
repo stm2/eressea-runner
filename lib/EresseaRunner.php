@@ -1,6 +1,9 @@
 <?php
 
-require_once 'Logger.php';
+require_once __DIR__ . '/Logger.php';
+require_once __DIR__ . '/../orders-php/orders.php';
+require_once __DIR__ . '/../orders-php/factions.php';
+require_once __DIR__ . '/../orders-php/cli.php';
 
 enum StatusCode : int {
     /** do not exit */
@@ -96,6 +99,11 @@ class EresseaRunner {
             'std_runner' => true,
             'commandline' => 'backup [<game-id> <turn>]',
             'short' => 'backup relevant data for this turn'
+        ],
+        'status' => [
+            'std_runner' => true,
+            'commandline' => 'status',
+            'short' => 'report game status'
         ]
     ];
 
@@ -208,6 +216,7 @@ Run a turn. Fails if the reports directory already exists.
     do a complete cycle: fetch mail, create-orders, run, send
 --first
     this is the first time (do not create orders)
+
 EOL,
 
     ];
@@ -221,24 +230,24 @@ EOL,
 
 
     function get_cmd_line(string $command) : string {
-        return (EresseaRunner::COMMANDS[$command]['commandline'] ?? $command) . "\n";
+        return (EresseaRunner::COMMANDS[$command]['commandline'] ?? $command) . PHP_EOL;
     }
 
     function line_break(string $text, string $prefix = '', $linewidth = 100) : string {
         $info = "";
-        $lines = explode("\n", $text);
+        $lines = preg_split("/\r\n|\n|\r/", $text);
         foreach($lines as $line) {
             preg_match("/^( *)(.*)/", $line, $matches);
             $indent = $matches[1] . $prefix;
             $line = $matches[2];
             if (!empty($info))
-                $info .= "\n";
+                $info .= PHP_EOL;
             $words = explode(" ", $line);
             $info .= $indent;
             $pos = mb_strlen($indent);
             foreach ($words as $word) {
                 if ($pos != 0 && $pos + mb_strlen($word) > $linewidth) {
-                    $info .= "\n$indent";
+                    $info .= PHP_EOL . "$indent";
                     $pos = mb_strlen($indent)+1;
                 } elseif ($pos > mb_strlen($indent)) {
                     $info .= " ";
@@ -264,19 +273,19 @@ EOL,
         if ($command == NULL) {
             echo sprintf(static::HELP[0], $name, $name, $name);
         } elseif ('config_not_found' == $command) {
-            echo "    You can create a config file with the install or the create_config command.\n";
-            echo "    You can manually set the location of the config file with the -c parameter.\n";
+            echo "    You can create a config file with the install or the create_config command." . PHP_EOL;
+            echo "    You can manually set the location of the config file with the -c parameter." . PHP_EOL;
         } else {
-            echo "USAGE:\n";
+            echo "USAGE:" . PHP_EOL;
             if ('commands' == $command) {
                 echo $this->line_break(static::HELP[$command]);
                 foreach(static::COMMANDS as $cmd => $cinfo) {
                     echo $this->short_info($cmd);
-                    echo "\n";
+                    echo PHP_EOL;
                 }
             } else if ("eressea" == $command) {
                 echo $this->get_cmd_line($command);
-                echo "        call the eressea server with the given arguments\n\n";
+                echo "        call the eressea server with the given arguments" . PHP_EOL  . PHP_EOL;
                 $eressea = $this->get_server_directory() . "/bin/eressea";
                 if (is_executable($eressea)) {
                     if (chdir(dirname($eressea))) {
@@ -284,21 +293,21 @@ EOL,
                         passthru("eressea --help");
                     }
                 } else
-                    echo "Eressea executable no found; did you run '$name install'?\n";
+                    echo "Eressea executable no found; did you run '$name install'?" . PHP_EOL;
             } elseif (isset(static::COMMANDS[$command])) {
                 if (isset(static::HELP[$command])) {
                     echo $this->get_cmd_line($command);
                     echo $this->line_break(static::HELP[$command], "    ");
                 } else {
                     echo $this->short_info($command);
-                    echo "\n";
+                    echo PHP_EOL;
                 }
             } else if (isset(static::HELP[$command])) {
                 echo static::HELP[$command];
             } else {
-                echo "    No information on the command '$command'.\n";
+                echo "    No information on the command '$command'." . PHP_EOL;
             }
-            echo "\n";
+            echo PHP_EOL;
         }
 
         if ($exit !== NULL) {
@@ -308,28 +317,28 @@ EOL,
 
     function info(string $msg) : void {
         if ($this->verbosity > 0) {
-            echo "$msg\n";
+            echo "$msg" . PHP_EOL;
         }
         Logger::info($msg);
     }
 
     function error(string $msg) : void {
         if ($this->verbosity > 0) {
-            echo "$msg\n";
+            echo "$msg" . PHP_EOL;
         }
         Logger::error($msg);
     }
 
     function log(string $msg) : void {
         if ($this->verbosity > 1) {
-            echo "$msg\n";
+            echo "$msg" . PHP_EOL;
         }
         Logger::info($msg);
     }
 
     function debug(string $msg) : void {
         if ($this->verbosity > 2) {
-            echo "$msg\n";
+            echo "$msg" . PHP_EOL;
         }
         Logger::debug($msg);
     }
@@ -350,11 +359,11 @@ EOL,
     }
 
     function cmd_info(string $configfile, array $argv, array $pos_args) : void {
-        $this->info("\ncommand: " . $this->scriptname);
+        $this->info(PHP_EOL . "command: " . $this->scriptname);
         $this->info("working directory: '" . getcwd() . "'");
         $this->info("config: '$configfile'");
         foreach ($pos_args as $key => $value) {
-            $this->log("arg[$key]: '$value'\n");
+            $this->log("arg[$key]: '$value'" . PHP_EOL);
         }
 
         $this->info("base dir: '" . ($this->config['runner']['basedir'] ?? "-?-") . "'");
@@ -386,7 +395,7 @@ EOL,
             foreach($out as $line)
                 $text .= $line;
 
-            $this->info("eressea: $text\n");
+            $this->info("eressea: $text" . PHP_EOL);
         } else {
             $this->info("eressea not configured");
         }
@@ -458,14 +467,14 @@ EOL,
         if ($default == 'Y') $hints = 'Y/n'; else $hints = 'y/N';
         if ($this->confirm_all) {
             if ($this->verbosity > 0)
-                echo "$prompt [$hints]\n";
+                echo "$prompt [$hints]" . PHP_EOL;
             return true;
         }
-        $lines = explode("\n", $prompt);
+        $lines = preg_split("/\r\n|\n|\r/", $prompt);
         for($l = 0; $l < count($lines) - 1; ++$l) {
-            echo $lines[$l] . "\n";
+            echo $lines[$l] . PHP_EOL;
         }
-        $continue = readline($lines[count($lines)-1] . " [$hints] \n");
+        $continue = readline($lines[count($lines)-1] . " [$hints] " . PHP_EOL);
         if ($continue === false || $continue ==='')
             $continue = $default;
         return strcasecmp($continue, 'y') === 0;
@@ -474,13 +483,13 @@ EOL,
     private function input(string $prompt, ?string &$value) : bool {
         if ($this->confirm_all) {
             if ($this->verbosity > 0)
-                echo "$prompt [$value]\n";
+                echo "$prompt [$value]". PHP_EOL;
             return true;
         }
 
-        $lines = explode("\n", $prompt);
+        $lines = preg_split("/\r\n|\n|\r/", $prompt);
         for($l = 0; $l < count($lines) - 1; ++$l) {
-            echo $lines[$l] . "\n";
+            echo $lines[$l] . PHP_EOL;
         }
 
         $input = readline($lines[count($lines)-1] . " [$value] ");
@@ -514,10 +523,10 @@ EOL,
         if ($result != 0) {
             if ($exitonfailure) {
                 foreach ($out as $line) {
-                    echo "$line\n";
+                    echo "$line" . PHP_EOL;
                 }
             }
-            $this->abort(empty($error_msg)?"$cmd exited abnormally.\n":$error_msg, $exitonfailure?StatusCode::STATUS_EXECUTION:StatusCode::STATUS_GOOD);
+            $this->abort(empty($error_msg)?("$cmd exited abnormally." . PHP_EOL):$error_msg, $exitonfailure?StatusCode::STATUS_EXECUTION:StatusCode::STATUS_GOOD);
         }
 
         return $out;
@@ -726,7 +735,7 @@ EOF;
 
         $eressea_ini = [
           'game' => [
-            'locales' => 'de/en',
+            'locales' => 'de,en',
             'id' => "$game_id",
             'start' => $start,
             'dbname' => 'eressea.db',
@@ -810,7 +819,7 @@ EOF;
                 while ($this->input("${invalid}Enter faction. <email> <race> <language> separated by spaces. Stop with empty line: ", $line) && !empty($line)) {
                     if (!empty($line)) {
                         if (preg_match('/^[^\s]+\s+[^\s]+\s+[^\s+].*$/', $line) == 1) {
-                            $lines .= "$line\n";
+                            $lines .= "$line" . PHP_EOL;
                             $line ='';
                             $invalid='';
                         } else {
@@ -819,7 +828,7 @@ EOF;
                     }
                 }
                 if (!empty($lines)) {
-                    file_put_contents('newfactions', static::NEWFACTIONS_TEMPLATE . "\n" . $lines);
+                    file_put_contents('newfactions', static::NEWFACTIONS_TEMPLATE . PHP_EOL . $lines);
                     $factions_found = true;
                 }
             }
@@ -835,8 +844,7 @@ EOF;
             $config = $this->parse_json($configfile);
             if ($config['algo'] != null && isset($pos_args[0]) && $config['algo'] != $algo) {
                 $backup = $this->backup_file($configfile);
-                $this->info("Found existing $gamedir/autoseed.json file that does not match " . $algo .
-                    ".\nMoving existing file to $backup.");
+                $this->info("Found existing $gamedir/autoseed.json file that does not match " . $algo . "." . PHP_EOL . " Moving existing file to $backup.");
                 $config = [];
             }
         } else {
@@ -917,7 +925,7 @@ EOF;
 
         $eressea = escapeshellarg($this->get_server_directory() . "/bin/eressea");
 
-        $this->log("$eressea $argstring $scriptname\n");
+        $this->log("$eressea $argstring $scriptname" . PHP_EOL);
         if ($out !== null){
             $result = false;
             $out = $this->exec("$eressea $argstring $scriptname", null, true, $result);
@@ -951,7 +959,7 @@ EOF;
         foreach($args as $arg) {
             $argstring .= " " . escapeshellarg($arg);
         }
-        $this->log("$scriptname $argstring\n");
+        $this->log("$scriptname $argstring" . PHP_EOL);
 
         return passthru("$scriptname $argstring") ===   null;
     }
@@ -1044,8 +1052,9 @@ EOT;
         }
 
         do {
-            if (!$this->input("I will try to create a new mutt configuration file for you.\n".
-                "These are the settings for *sending* e-mails.\n".
+            if (!$this->input("I will try to create a new mutt configuration file for you." .
+                PHP_EOL .
+                "These are the settings for *sending* e-mails." . PHP_EOL .
                 "What is your server's name used in the sender's address?", $name))
                 exit(0);
             if (!$this->input("What is your sender's email address?", $email))
@@ -1061,8 +1070,13 @@ EOT;
             if (!$this->input("What is your SMTP server port (often 465 or 587)?", $smtp_port))
                 exit(0);
 
-        } while (!$this->confirm("Here's what you have entered so far:\n" .
-            "name: $name\nemail: $email\nuser: $smtp_user\npassword: ***\nserver: $smtp_server\nport: $smtp_port\n".
+        } while (!$this->confirm("Here's what you have entered so far:" . PHP_EOL .
+            "name: $name" . PHP_EOL .
+            "email: $email" . PHP_EOL .
+            "user: $smtp_user" . PHP_EOL .
+            "password: ***" . PHP_EOL .
+            "server: $smtp_server" . PHP_EOL .
+            "port: $smtp_port" . PHP_EOL .
             "Is this correct?"));
 
 
@@ -1074,11 +1088,11 @@ EOT;
 
         do {
             do {
-                if (!$this->input("These are the settings for *receiving* e-mails.\n".
+                if (!$this->input("These are the settings for *receiving* e-mails."  . PHP_EOL .
                     "Would you like to use the IMAP or the POP3 protocol?", $protocol))
                     exit(0);
                 if ($protocol != "IMAP" && $protocol != "POP3")
-                    echo "Unknown protocol. Please enter IMAP or POP3\n";
+                    $this->info("Unknown protocol. Please enter IMAP or POP3" . PHP_EOL);
             } while($protocol != "IMAP" && $protocol != "POP3");
             if (!$this->input("What is your $protocol user name?", $protocol_user))
                 exit(0);
@@ -1089,8 +1103,11 @@ EOT;
                 exit(0);
             if (!$this->input("What is your $protocol server port (often 993)?", $protocol_port))
                 exit(0);
-        } while (!$this->confirm("Here's what you have entered so far:\n" .
-            "user: $protocol_user\npassword: $same\nserver: $protocol_server\nport: $protocol_port\n".
+        } while (!$this->confirm("Here's what you have entered so far:"  . PHP_EOL .
+            "user: $protocol_user" . PHP_EOL .
+            "password: $same" . PHP_EOL .
+            "server: $protocol_server" . PHP_EOL .
+            "port: $protocol_port" . PHP_EOL .
             "Is this correct?"));
 
         if ($protocol_pw == '') $protocol_pw = $smtp_pw;
@@ -1165,7 +1182,7 @@ EOT;
         touch("$basedir/etc/.fetchids");
         chmod("$basedir/etc/.fetchids", 0700);
 
-        echo "Wrote profile to $muttrc and $fetchmailrc. You may edit these files manually to make further adjustments.\n";
+        $thi->info("Wrote profile to $muttrc and $fetchmailrc. You may edit these files manually to make further adjustments." . PHP_EOL);
 
         mkdir($this->get_base_directory() . "/Mail");
 
@@ -1440,17 +1457,17 @@ EOT;
         $tab = "";
 
         if ($runners_active > 0 && empty($cron_info['set_eressea'])) {
-            $tab .= "\n# Environment variables are not visible from cron\n" .
-                "# setup ERESSEA variable\n";
-            $tab .= "ERESSEA=$basedir\n";
-            $tab .= "FETCHMAILRC=$basedir/etc/fetchmailrc\n\n";
+            $tab .=  PHP_EOL . "# Environment variables are not visible from cron" . PHP_EOL .
+                "# setup ERESSEA variable" . PHP_EOL;
+            $tab .= "ERESSEA=$basedir" . PHP_EOL;
+            $tab .= "FETCHMAILRC=$basedir/etc/fetchmailrc" . PHP_EOL . PHP_EOL;
         }
 
         foreach($cron_info['crontab'] as $line) {
             if (isset($lines[$i])) {
-                $tab .= $lines[$i] . "\n";
+                $tab .= $lines[$i] . PHP_EOL;
             } else {
-                $tab .= $line . "\n";
+                $tab .= $line . PHP_EOL;
             }
             ++$i;
         }
@@ -1459,28 +1476,28 @@ EOT;
             if (isset($info['new'])) {
                 $game = $info['id'];
                 $time = $info['time'];
-                $tab .= "\n#runner for game $game\n";
-                $tab .=  preg_replace($runner_pattern, "$time \${8}$game\${10}", static::RUNNER_LINE) . "\n\n";
+                $tab .= PHP_EOL . "#runner for game $game" . PHP_EOL;
+                $tab .=  preg_replace($runner_pattern, "$time \${8}$game\${10}", static::RUNNER_LINE) . PHP_EOL . PHP_EOL;
 
                 if (isset($info['checker']['time'])) {
                 $time = $info['checker']['time'];
-                $tab .= "#checker for game $game\n";
-                $tab .=  preg_replace($checker_pattern, "$time \${8}$game\${10}", static::CHECKER_LINE) . "\n\n";
+                $tab .= "#checker for game $game" . PHP_EOL;
+                $tab .=  preg_replace($checker_pattern, "$time \${8}$game\${10}", static::CHECKER_LINE) . PHP_EOL . PHP_EOL;
                 }
             }
         }
 
         if ($runners_active > 0 && $fetchmail_active == 0) {
             if ($this->confirm("Do you want to start fetchmail automatically?")) {
-                $tab .= "\n# start fetchmail demon\n";
-                $tab .= static::FETCHMAIL_LINE ."\n";
+                $tab .= PHP_EOL . "# start fetchmail demon" . PHP_EOL;
+                $tab .= static::FETCHMAIL_LINE . PHP_EOL;
             }
         }
-        $tab .= "\n";
+        $tab .= PHP_EOL;
 
-        $this->info("------------------------------------\n$tab");
+        $this->info("------------------------------------" . PHP_EOL . "$tab");
 
-        if ($this->confirm("\nAbove is your new crontab. Install it?")) {
+        if ($this->confirm(PHP_EOL . "Above is your new crontab. Install it?")) {
             $filename = "$basedir/etc/crontab.installed";
             file_put_contents($filename, $tab);
             $this->exec("crontab $filename");
@@ -1652,9 +1669,9 @@ EOT;
         $this->call_eressea('./scripts/run-turn.lua', [ '-t', "$turn", '-l', '5' ], $out);
         $text = "";
         foreach($out as $line)
-            $text .= "$line\n";
+            $text .= "$line" . PHP_EOL;
 
-        $this->info("$text\n");
+        $this->info("$text" . PHP_EOL);
 
         if (!file_exists("../log/eressea.log.$game.$turn"))
             link("eressea.log", "../log/eressea.log.$game.$turn");
@@ -1701,7 +1718,7 @@ EOT;
         }
         $text='';
         foreach($out as $line)
-            $text .= $line . "\n";
+            $text .= $line . PHP_EOL;
         $this->debug($text);
     }
 
@@ -1838,12 +1855,161 @@ EOT;
         if (empty($players))
             $this->abort("not players found in passwd file", StatusCode::STATUS_EXECUTION);
 
-        $this->confirm("Send announce $subject\n  with $bodyfile\n  and attachments '" .
-            implode(', ', $attachements) . "'\n  to " .
+        $this->confirm("Send announce $subject" . PHP_EOL . " with $bodyfile" . PHP_EOL . "  and attachments '" .
+            implode(', ', $attachements) . "'" . PHP_EOL . " to " .
             ((count($players) < 5 ? implode(', ', $players) :
                 (implode(', ', array_slice($players, 0, 3)) . ", ... + " . (count($players) - 3))) .
             '?'));
         $this->send_mail($subject, $bodyfile, $attachements, $players);
+    }
+
+    function get_games() {
+        $games = [];
+        if (isset($this->config['runner']['basedir']) &&
+            isset($this->config['runner']['gamedir']) &&
+            chdir($this->get_game_directory())) {
+            $dirs = glob("game-*");
+            foreach($dirs as $dir) {
+                if (is_dir($dir) && file_exists($dir . '/eressea.ini')) {
+                    $games[] = substr($dir, 5);
+                }
+            }
+        }
+        return $games;
+    }
+
+    public static function eressea_connect(string $dbsource) : EresseaDB {
+        $db = new EresseaDB();
+        $db->connect($dbsource);
+        return $db;
+    }
+
+    public static function orders_connect(string $dbsource) : OrderDB {
+        $db = new OrderDB();
+        $db->connect($dbsource);
+        return $db;
+    }
+
+
+    function status(string $gameid) : void {
+        $this->game_id = $gameid;
+        $this->goto_game();
+        $turn = $this->get_current_turn();
+        $rules = $this->get_game_setting(['lua', 'rules']);
+
+        $there = file_exists("data/$turn.dat")? ' is there!' : ' is not here!';
+        $this->info("Game $gameid, rules $rules, turn $turn$there!");
+        if (!file_exists('eressea.db')) {
+            $this->info("no factions");
+        } else {
+            $edb = $this->eressea_connect('sqlite:eressea.db');
+            $stmt = $edb->getFactions();
+            $factions = $stmt->fetchAll();
+            $num_factions = count($factions);
+
+            $orders_processed = true;
+            $orders_dir = "orders.dir.$turn";
+            if (!is_dir($orders_dir)) {
+                $orders_processed = false;
+                $orders_dir = 'orders.dir';
+            }
+            if (!is_dir($orders_dir)) {
+                $this->info("no orders!");
+            } else {
+                chdir($orders_dir);
+                $odb = $this->orders_connect('sqlite:orders.db');
+                ob_start();
+                orders::list($odb);
+                $orders = ob_get_contents();
+                ob_end_clean();
+                // echo "orders:\n$orders";
+                $filelines = preg_split("/\r\n|\n|\r/", $orders);
+                $valid = [];
+                $invalid = [];
+                foreach($filelines as $oline) {
+                    if (!empty($oline)) {
+                        $file = explode("\t", $oline)[2];
+                        ob_start();
+                        cli::info($file);
+                        $filefactions = ob_get_contents();
+                        ob_end_clean();
+                        $factionlines = preg_split("/\r\n|\n|\r/", $filefactions);
+                        foreach($factionlines as $fline) {
+                            if (!empty($fline)) {
+                                $parts = explode("\t", $fline);
+                                $fid = $parts[0];
+                                $pw = $parts[1];
+                                if (factions::checkpw($edb, $fid, $pw)) {
+                                    $valid[$fid] = $file;
+                                } else {
+                                    $invalid[$fid] = $file;
+                                }
+                            }
+                        }
+
+                    }
+                }
+                $num_valid = $num_nmr = $num_invalid = 0;
+                foreach($factions as $faction) {
+                    if (isset($valid[$faction['no']])) {
+                    // echo $faction['no'] . " valid\n";
+                        ++$num_valid;
+                    } else {
+                    // echo $faction['no'] . " NMR" . PHP_EOL;
+                        ++$num_nmr;
+                    }
+                    if (isset($invalid[$faction['no']])) {
+                        $this->info($faction['no'] . " invalid");
+                        ++$num_invalid;
+                    }
+                }
+
+                $this->info("$num_valid valid, $num_nmr NMRs of $num_factions factions; $num_invalid invalid");
+
+            $this->goto_game();
+
+            // echo count($valid) . " factions with orders:\n";
+            // foreach($valid as $fid => $file) {
+            //     echo "$fid $file\n";
+            // }
+
+            // echo count($invalid) . " factions with invalid orders:\n";
+            // foreach($invalid as $fid => $file) {
+            //     echo "$fid $file\n";
+            // }
+            }
+            if ($orders_processed) {
+                $this->info("orders processed");
+            }
+            if (file_exists("orders.$turn")) {
+                $this->info("orders exist");
+            }
+            if (file_exists("orders.$turn")) {
+                $this->info("orders exist");
+            }
+            $reports = glob("reports/$turn-*{cr,zip}");
+            if (!empty($reports) && file_exists('reports/report.txt')) {
+                $this->info("reports created");
+            }
+            $reports = glob("reports/$turn-*{sh}");
+            if (!empty($reports)) {
+                $this->info("ready to send");
+            }
+
+        }
+    }
+
+    function cmd_status(array $pos_args) : void {
+        $gameid = $this->game_id;
+        if ($gameid != null) {
+            $this->status($gameid);
+        }
+
+        else {
+            foreach($this->get_games() as $gameid) {
+                $this->status($gameid);
+            }
+        }
     }
 
     private function backup_file(string $filename) : string {
@@ -1902,12 +2068,12 @@ EOT;
     }
 
     function php_encode(array $content) {
-        $text = "<?php\n";
+        $text = "<?php" . PHP_EOL;
         foreach(static::CONFIG_VARIABLES as $section) {
             if (isset($content[$section]))
-                $text .= "\$ER$section = " . var_export($content[$section], true) . ";\n";
+                $text .= "\$ER$section = " . var_export($content[$section], true) . ";" . PHP_EOL;
             else
-                $text .= "\$ER$section = [ ];\n";
+                $text .= "\$ER$section = [ ];" . PHP_EOL;
         }
         return $text;
     }
@@ -1953,7 +2119,7 @@ EOT;
 
     function save_config() : void {
         $configfile = $this->config['configfile'];
-        $this->info("save $configfile\n");
+        $this->info("save $configfile" . PHP_EOL);
         $copy = $this->config;
         unset($copy['configfile']);
         $this->save_php($configfile, $copy);
@@ -2038,7 +2204,7 @@ EOT;
                 $runner->set_fakemail(true);
             } else if (str_starts_with($arg, "-")) {
                 if ($verbosity > 0)
-                    echo "unknown option '$arg'\n";
+                    echo "unknown option '$arg'" . PHP_EOL;
                 $usage = 1;
             } else {
                 break;
@@ -2060,9 +2226,9 @@ EOT;
             $logger->info("Config file '$configfile' read");
             $logger->debug($config);
         } else {
-            $logger->warning("No config file '$configfile'\n");
+            $logger->warning("No config file '$configfile'" . PHP_EOL);
         }
-        $logger->debug("Parameters:\n");
+        $logger->debug("Parameters:" . PHP_EOL);
         $logger->debug($argv);
 
         $pos_args = array_slice($argv, $optind);
@@ -2093,7 +2259,7 @@ EOT;
             } else {
                 $msg = "unknown command '$command'";
                 if ($verbosity > 0)
-                    echo "$msg\n";
+                    echo "$msg" . PHP_EOL;
                 $logger->error($msg);
                 $runner->usage(true, StatusCode::STATUS_PARAMETER);
             }
